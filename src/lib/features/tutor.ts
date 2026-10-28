@@ -118,7 +118,15 @@ export function askTutor(conversationId: number, input: AskInput): JobView<{ mes
     const valid = new Set(labelled.map((l) => l.label));
     const cleaned = sanitizeCitations(result.content, valid);
     const sources = toSourceRefs(labelled, cleaned.cited);
-    const grounding = !grounded ? "general" : labelled.length ? "materials" : "not_found";
+    // Describe what the answer actually did: cited the materials, said they don't cover it, or neither.
+    const saysNotCovered = /(materials|sources) (don't|do not|doesn't|does not) (cover|contain|mention)|ไม่ครอบคลุม|ไม่มีข้อมูล/i.test(cleaned.text.slice(0, 400));
+    const grounding = !grounded
+      ? "general"
+      : !labelled.length || (saysNotCovered && cleaned.cited.size === 0)
+        ? "not_found"
+        : cleaned.cited.size > 0
+          ? "materials"
+          : "uncited";
     const content = cleaned.text.trim() || "The model returned an empty answer. Try asking again or rephrasing the question.";
 
     const message = addMessage(conversationId, {

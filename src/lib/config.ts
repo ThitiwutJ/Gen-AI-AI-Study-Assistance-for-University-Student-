@@ -44,7 +44,8 @@ export const config = {
   /** Maximum time for one AI request (model load + generation). */
   requestTimeoutMs: int("AI_REQUEST_TIMEOUT_MS", 600_000, 30_000, 3_600_000),
 
-  dataDir: path.resolve(process.cwd(), str("DATA_DIR") ?? "data"),
+  // Local data folder; the comment stops Next.js from tracing the whole project for deployment.
+  dataDir: path.resolve(/*turbopackIgnore: true*/ process.cwd(), str("DATA_DIR") ?? "data"),
 
   maxUploadBytes: int("MAX_UPLOAD_MB", 25, 1, 200) * 1024 * 1024,
 

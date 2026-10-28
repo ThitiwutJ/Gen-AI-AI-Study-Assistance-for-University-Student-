@@ -8,7 +8,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-// @ts-expect-error — plain JS test helper
 import { startMockOllama } from "../scripts/mock-ollama.mjs";
 
 type Mock = { url: string; requests: { url: string; body: Record<string, unknown> }[]; close: () => Promise<void> };

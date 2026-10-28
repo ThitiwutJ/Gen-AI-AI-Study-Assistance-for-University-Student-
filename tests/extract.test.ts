@@ -10,6 +10,7 @@ describe("extraction of the sample materials", () => {
     expect(e.unitKind).toBe("page");
     expect(e.units.map((u) => u.index)).toEqual([1, 2, 3, 4]);
     expect(e.units[3].text).toContain("15%");
+    expect(e.title).toBe("FIN101 Lecture 3: The Time Value of Money");
   });
 
   it("reads a PowerPoint slide by slide, including speaker notes", async () => {
@@ -18,6 +19,7 @@ describe("extraction of the sample materials", () => {
     expect(e.units).toHaveLength(6);
     expect(e.units[1].heading).toBe("The law of demand");
     expect(e.units[1].text).toContain("Speaker notes:");
+    expect(e.title).toBe("ECON102: Supply and Demand");
   });
 
   it("reads a Thai Word document by heading", async () => {

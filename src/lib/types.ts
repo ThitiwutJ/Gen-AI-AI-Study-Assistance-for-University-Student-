@@ -77,7 +77,7 @@ export interface MessageView {
   sources: SourceRef[];
   model: string | null;
   meta: {
-    grounding?: "materials" | "not_found" | "general";
+    grounding?: "materials" | "uncited" | "not_found" | "general";
     retrievalMode?: "hybrid" | "keyword" | "vector" | "none";
     level?: Level;
     promptTokens?: number;

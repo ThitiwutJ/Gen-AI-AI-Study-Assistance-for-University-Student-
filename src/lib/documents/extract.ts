@@ -21,6 +21,14 @@ export interface Extraction {
   unitKind: UnitKind;
   units: ExtractedUnit[];
   warnings: string[];
+  /** The document's own title (PDF metadata, first slide title or first heading), if any. */
+  title?: string | null;
+}
+
+function cleanTitle(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.replace(/^Microsoft (Word|PowerPoint) - /i, "").replace(/\.(docx?|pptx?|pdf)$/i, "").replace(/\s+/g, " ").trim();
+  return t.length >= 3 && t.length <= 150 && !/^untitled/i.test(t) ? t : null;
 }
 
 export const SUPPORTED_EXTENSIONS = ["pdf", "docx", "pptx", "txt", "md"] as const;
@@ -56,12 +64,19 @@ export async function extractDocument(buffer: Buffer, fileType: FileType): Promi
 // ---------- PDF ----------
 
 async function extractPdf(buffer: Buffer): Promise<Extraction> {
-  const { extractText, getDocumentProxy } = await import("unpdf");
+  const { extractText, getDocumentProxy, getMeta } = await import("unpdf");
   let pages: string[];
+  let title: string | null = null;
   try {
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
     const result = await extractText(pdf, { mergePages: false });
     pages = Array.isArray(result.text) ? result.text : [String(result.text)];
+    try {
+      const meta = await getMeta(pdf);
+      title = cleanTitle((meta.info as Record<string, unknown> | undefined)?.Title);
+    } catch {
+      /* metadata is optional */
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/password/i.test(message)) throw invalidFile("This PDF is password-protected. Remove the password and upload it again.");
@@ -80,7 +95,7 @@ async function extractPdf(buffer: Buffer): Promise<Extraction> {
       `${empty} of ${units.length} pages had no readable text — they may be scanned images or diagrams, which Gen AI can't read.`,
     );
   }
-  return { fileType: "pdf", unitKind: "page", units: units.filter((u) => u.text.length > 0), warnings };
+  return { fileType: "pdf", unitKind: "page", units: units.filter((u) => u.text.length > 0), warnings, title };
 }
 
 // ---------- DOCX ----------
@@ -115,7 +130,7 @@ async function extractDocx(buffer: Buffer): Promise<Extraction> {
     sections.push({ heading, text: heading ? `${heading}\n${body}`.trim() : body });
   }
   const units = sections.length > 1 ? sections : splitIntoParts(sections.map((s) => s.text).join("\n\n"));
-  return { fileType: "docx", unitKind: "section", units: number(units), warnings: [] };
+  return { fileType: "docx", unitKind: "section", units: number(units), warnings: [], title: cleanTitle(sections.find((s) => s.heading)?.heading) };
 }
 
 // ---------- PPTX ----------
@@ -177,7 +192,7 @@ async function extractPptx(buffer: Buffer): Promise<Extraction> {
     throw invalidFile("No text was found on these slides. They may contain only images, which Gen AI can't read.");
   }
   if (empty) warnings.push(`${empty} of ${units.length} slides had no text (images only).`);
-  return { fileType: "pptx", unitKind: "slide", units: units.filter((u) => u.text.length >= 3), warnings };
+  return { fileType: "pptx", unitKind: "slide", units: units.filter((u) => u.text.length >= 3), warnings, title: cleanTitle(units[0]?.heading) };
 }
 
 // ---------- Plain text / Markdown / pasted notes ----------
@@ -215,7 +230,7 @@ export function extractPlainText(raw: string, fileType: FileType): Extraction {
   if (current.lines.join("").trim()) sections.push({ heading: current.heading, text: current.lines.join("\n").trim() });
   const usable = sections.filter((s) => s.text);
   const units = usable.length > 1 ? usable : splitIntoParts(text);
-  return { fileType, unitKind: "section", units: number(units), warnings: [] };
+  return { fileType, unitKind: "section", units: number(units), warnings: [], title: cleanTitle(usable.find((s) => s.heading)?.heading) };
 }
 
 /** Split long heading-less text into ~400-word parts at paragraph boundaries. */

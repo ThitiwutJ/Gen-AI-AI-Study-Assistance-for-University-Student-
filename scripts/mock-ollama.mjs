@@ -77,7 +77,7 @@ export function startMockOllama(options = {}) {
     const model = models().find((m) => m.name === body.model);
 
     if (req.url === "/api/version") return json(200, { version: "0.0.0-mock" });
-    if (req.url === "/api/tags") return json(200, { models: models().map(({ caps: _c, ...m }) => ({ ...m, model: m.name })) });
+    if (req.url === "/api/tags") return json(200, { models: models().map((m) => ({ name: m.name, model: m.name, size: m.size, digest: m.digest, details: m.details })) });
     if (req.url === "/api/ps") return json(200, { models: [...loaded].map((name) => ({ name, model: name })) });
     if (req.url === "/__requests") return json(200, requests);
     if (req.url === "/api/show") {
@@ -139,13 +139,17 @@ export function startMockOllama(options = {}) {
           : `**Mock answer (test double, not a real model)** to: ${question}\n\nNo sources were provided.`;
       }
 
+      if (process.env.MOCK_THINK_IN_CONTENT === "1") content = `<think>hidden reasoning</think>${content}`;
+      if (body.stream === false) {
+        const promptText = messages.map((m) => m.content).join(" ");
+        return json(200, { model: model.name, message: { role: "assistant", content }, done: true, done_reason: "stop", prompt_eval_count: Math.ceil(promptText.length / 4), eval_count: 1 });
+      }
       res.writeHead(200, { "content-type": "application/x-ndjson" });
       const send = (obj) => res.write(`${JSON.stringify(obj)}\n`);
       const wait = () => new Promise((r) => setTimeout(r, opts.delayMs));
       if (model.caps.includes("thinking") && body.think !== false && body.think !== "low") {
         send({ model: model.name, message: { role: "assistant", content: "", thinking: "(mock reasoning that must never be shown)" }, done: false });
       }
-      if (process.env.MOCK_THINK_IN_CONTENT === "1") content = `<think>hidden reasoning</think>${content}`;
       const pieces = content.match(/[\s\S]{1,12}/g) ?? [content];
       for (const piece of pieces) {
         if (res.destroyed) return;

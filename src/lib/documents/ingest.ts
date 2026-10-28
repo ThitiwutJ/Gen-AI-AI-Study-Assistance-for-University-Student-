@@ -76,10 +76,10 @@ export async function ingestDocument(input: IngestInput): Promise<DocumentSummar
   if (input.file) {
     storedName = `${randomUUID()}.${fileType}`;
     fs.mkdirSync(uploadsDir(), { recursive: true });
-    fs.writeFileSync(path.join(uploadsDir(), storedName), input.file.buffer);
+    fs.writeFileSync(path.join(/*turbopackIgnore: true*/ uploadsDir(), storedName), input.file.buffer);
   }
 
-  const title = (input.title?.trim() || (fileName ? titleFromFileName(fileName) : "Pasted notes")).slice(0, 200);
+  const title = (input.title?.trim() || extraction.title || (fileName ? titleFromFileName(fileName) : "Pasted notes")).slice(0, 200);
   const db = getDb();
   const ts = now();
   let id = 0;
@@ -121,7 +121,7 @@ export async function ingestDocument(input: IngestInput): Promise<DocumentSummar
       return docId;
     });
   } catch (error) {
-    if (storedName) fs.rmSync(path.join(uploadsDir(), storedName), { force: true });
+    if (storedName) fs.rmSync(path.join(/*turbopackIgnore: true*/ uploadsDir(), storedName), { force: true });
     throw error;
   }
 
