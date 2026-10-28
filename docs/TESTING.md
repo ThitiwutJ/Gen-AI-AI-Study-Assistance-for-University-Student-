@@ -17,13 +17,14 @@ The app was built and tested in a cloud workspace that **could not run a real AI
 | Type-check | `npm run typecheck` | ✅ Passed |
 | Production build | `npm run build` | ✅ Passed, no warnings |
 | Unit tests | `npm test` (tests/unit.test.ts) | ✅ 24 passed |
+| Search without FTS5 | `npm test` (tests/no-fts.test.ts) | ✅ 1 passed |
 | Extraction tests | `npm test` (tests/extract.test.ts) | ✅ 11 passed |
 | End-to-end server tests (with test double) | `npm test` (tests/integration.test.ts) | ✅ 19 passed |
 | Browser walkthrough (headless Chromium, production build, test double) | manual script | ✅ Passed (details below) |
 | Install on the team laptop (Windows 11, Node.js 22.15, Ollama 0.40.11) | `setup-gen-ai.bat` | ✅ `npm install` and `npm run build` passed |
 | Live test against the real `gemma3:1b` on the laptop | `npm run check:ai` | See "Findings on the team laptop" below |
 
-**Total automated tests: 54 passed, 0 failed.**
+**Total automated tests: 55 passed, 0 failed.**
 
 ### What the automated tests cover
 
@@ -54,6 +55,9 @@ The only browser console error was the expected 415 response for the rejected `.
 
 1. **Database driver on Windows (bug, fixed).** The optional `better-sqlite3` package didn't install, and the fallback to Node's built-in SQLite failed after the production build ("Unsupported external type Url for commonjs reference"). Fixed by loading drivers through `process.getBuiltinModule`, which the bundler doesn't rewrite. Verified with a production build using only the built-in driver.
 2. **Ollama crashes on the GPU (laptop driver issue).** Ollama 0.40.11's CUDA build fails on the RTX 3060 Laptop GPU with the installed driver (CUDA 12.3): `CUDA error: device kernel image is invalid`, then `llama-server process has terminated: exit status 0xc0000409`. Ollama's own log from 25 October shows the same model running on the CPU at about 35 tokens/s. Gen AI now detects the crash: `npm start` and `npm run check:ai` start a CPU-only Ollama on port 11435 and use it, and the app shows a clear "update your graphics driver" message. The automatic fallback was tested with a test double that simulates the crash.
+
+3. **No full-text search in Node.js 22.15's SQLite (fixed).** The SQLite built into Node.js 22.15 has no FTS5 module (`no such module: fts5`). Gen AI now detects this and uses its own keyword search (candidates with `LIKE`, ranked with a BM25-style score); when FTS5 becomes available (newer Node.js, or `better-sqlite3`), the index is rebuilt automatically. Verified with a production build using only the built-in driver and FTS5 switched off.
+4. **Real model results (CPU mode, `gemma3:1b`):** grounded English answer correct with `[S1]` citation in 1.7 s; Thai answer correct ("สัปดาห์ที่ 9") in 1.3 s; quiz JSON: 1 of 2 questions valid (the app drops invalid questions automatically). No embedding model installed, so search is keyword-only.
 
 ## What still needs testing on the laptop
 

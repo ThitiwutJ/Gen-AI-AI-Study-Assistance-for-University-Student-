@@ -66,20 +66,6 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id, position);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-  text, content='chunks', content_rowid='id', tokenize='trigram'
-);
-CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
-  INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text);
-END;
-CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
-  INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
-END;
-CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE OF text ON chunks BEGIN
-  INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
-  INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text);
-END;
-
 CREATE TABLE IF NOT EXISTS notes (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
@@ -154,7 +140,56 @@ CREATE TABLE IF NOT EXISTS flashcard_marks (
 );
 `;
 
-type GlobalWithDb = typeof globalThis & { __genaiDb?: Database };
+/**
+ * Full-text keyword index (SQLite FTS5, trigram tokenizer so Thai works). Some SQLite builds —
+ * e.g. the one built into Node.js 22.15 — don't include FTS5. Then Gen AI uses its own keyword
+ * search instead (see retrieval/search.ts), and rebuilds the index if FTS5 becomes available later.
+ */
+const FTS_SCHEMA = `
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+  text, content='chunks', content_rowid='id', tokenize='trigram'
+);
+CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+  INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+  INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+END;
+CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE OF text ON chunks BEGIN
+  INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+  INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text);
+END;
+`;
+
+function setupFullText(db: Database): boolean {
+  let available = process.env.GENAI_DISABLE_FTS !== "1";
+  if (available) {
+    try {
+      db.exec(FTS_SCHEMA);
+    } catch {
+      available = false;
+    }
+  }
+  const synced = db.prepare("SELECT value FROM meta WHERE key = 'fts_synced'").get<{ value: string }>()?.value === "1";
+  if (available && !synced) {
+    // Chunks may have been added while FTS5 was unavailable: rebuild the index from the chunks table.
+    db.exec("INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild');");
+  }
+  if (!available) {
+    // Without FTS5 the triggers would make every chunk insert fail.
+    db.exec("DROP TRIGGER IF EXISTS chunks_ai; DROP TRIGGER IF EXISTS chunks_ad; DROP TRIGGER IF EXISTS chunks_au;");
+  }
+  db.prepare("INSERT INTO meta(key, value) VALUES ('fts_synced', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(available ? "1" : "0");
+  return available;
+}
+
+type GlobalWithDb = typeof globalThis & { __genaiDb?: Database; __genaiFts?: boolean };
+
+/** True when the SQLite FTS5 keyword index is available. */
+export function hasFullText(): boolean {
+  getDb();
+  return Boolean((globalThis as GlobalWithDb).__genaiFts);
+}
 
 export function uploadsDir(): string {
   return path.join(config.dataDir, "uploads");
@@ -173,6 +208,7 @@ export function getDb(): Database {
   db.prepare("INSERT INTO meta(key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO NOTHING").run(
     String(SCHEMA_VERSION),
   );
+  g.__genaiFts = setupFullText(db);
   // Anything left "indexing" by a previous process was interrupted.
   db.prepare("UPDATE documents SET index_status = 'pending' WHERE index_status = 'indexing'").run();
   g.__genaiDb = db;
@@ -184,6 +220,7 @@ export function resetDbForTests(): void {
   const g = globalThis as GlobalWithDb;
   g.__genaiDb?.close();
   g.__genaiDb = undefined;
+  g.__genaiFts = undefined;
 }
 
 export function now(): string {

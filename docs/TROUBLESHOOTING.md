@@ -75,6 +75,7 @@ If the terminal shows `prompt used N of M context tokens`, the prompt was close 
 ## Installation problems
 
 - **`better-sqlite3` didn't install** (common on Windows) — that package is optional. With Node.js 22.13 or newer, Gen AI automatically uses Node's built-in SQLite instead. Check your version with `node -v`.
+- **`no such module: fts5`** — older built-in SQLite (Node.js 22.15) has no full-text index. Gen AI handles this automatically with its own keyword search; updating Node.js to the latest 22 or 24 LTS brings FTS5 back.
 - **"No SQLite driver is available"** — update Node.js to 22.13+ (22 LTS or 24 LTS).
 - **Port 3000 in use** — `npx next start -H 127.0.0.1 -p 3001`.
 

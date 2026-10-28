@@ -1,5 +1,5 @@
 import { config } from "@/lib/config";
-import { getDb } from "@/lib/db";
+import { getDb, hasFullText } from "@/lib/db";
 import { toFloat32 } from "@/lib/db/sqlite";
 import { getProvider, resolveModels } from "@/lib/ai/service";
 import { formatLocation } from "@/lib/documents/chunk";
@@ -46,8 +46,8 @@ const THAI_STOPWORDS = new Set(["อะไร", "อย่างไร", "ไห
 
 const wordSegmenter = new Intl.Segmenter("th", { granularity: "word" });
 
-/** Build an FTS5 query: quoted terms OR-ed together; Thai fragments shorter than 3 characters are joined with neighbours. */
-export function buildFtsQuery(query: string): string | null {
+/** Search terms: words without stopwords; Thai fragments shorter than 3 characters are joined with neighbours. */
+export function queryTerms(query: string): string[] {
   const words = [...wordSegmenter.segment(query.toLowerCase())].filter((s) => s.isWordLike).map((s) => s.segment.trim()).filter(Boolean);
   const terms: string[] = [];
   for (let i = 0; i < words.length; i++) {
@@ -61,9 +61,53 @@ export function buildFtsQuery(query: string): string | null {
     }
     if ([...w].length >= 3) terms.push(w);
   }
-  const unique = [...new Set(terms)].slice(0, 24);
+  return [...new Set(terms)].slice(0, 24);
+}
+
+/** Build an FTS5 query: quoted terms OR-ed together. */
+export function buildFtsQuery(query: string): string | null {
+  const unique = queryTerms(query);
   if (!unique.length) return null;
   return unique.map((t) => `"${t.replace(/"/g, '""')}"`).join(" OR ");
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  let count = 0;
+  let from = 0;
+  while (true) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) return count;
+    count++;
+    from = at + needle.length;
+  }
+}
+
+/**
+ * Keyword search without FTS5: candidates via LIKE, ranked in code with a BM25-style score
+ * (rarer terms count more; repeated terms count with diminishing returns).
+ */
+export function scoreKeywordMatches(query: string, rows: { id: number; text: string }[], limit: number): number[] {
+  const terms = queryTerms(query);
+  if (!terms.length || !rows.length) return [];
+  const lowered = rows.map((r) => ({ id: r.id, text: r.text.toLowerCase(), length: r.text.length }));
+  const avgLength = lowered.reduce((s, r) => s + r.length, 0) / lowered.length || 1;
+  const df = new Map(terms.map((t) => [t, lowered.filter((r) => r.text.includes(t)).length]));
+  const n = lowered.length;
+  return lowered
+    .map((r) => {
+      let score = 0;
+      for (const t of terms) {
+        const tf = countOccurrences(r.text, t);
+        if (!tf) continue;
+        const idf = Math.log(1 + (n - df.get(t)! + 0.5) / (df.get(t)! + 0.5));
+        score += idf * ((tf * 2.2) / (tf + 1.2 * (0.25 + 0.75 * (r.length / avgLength))));
+      }
+      return { id: r.id, score };
+    })
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((r) => r.id);
 }
 
 export function scopeDocumentIds(scope: Scope): number[] {
@@ -83,8 +127,20 @@ export function scopeDocumentIds(scope: Scope): number[] {
 }
 
 function keywordSearch(query: string, docIds: number[], limit: number): number[] {
+  if (!docIds.length) return [];
+  if (!hasFullText()) {
+    const terms = queryTerms(query);
+    if (!terms.length) return [];
+    const rows = getDb()
+      .prepare(
+        `SELECT id, text FROM chunks WHERE document_id IN (${docIds.map(() => "?").join(",")})
+         AND (${terms.map(() => "text LIKE ?").join(" OR ")})`,
+      )
+      .all<{ id: number; text: string }>(...docIds, ...terms.map((t) => `%${t}%`));
+    return scoreKeywordMatches(query, rows, limit);
+  }
   const fts = buildFtsQuery(query);
-  if (!fts || !docIds.length) return [];
+  if (!fts) return [];
   try {
     return getDb()
       .prepare(
