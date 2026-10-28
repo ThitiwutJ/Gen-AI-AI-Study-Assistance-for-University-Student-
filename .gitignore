@@ -1,0 +1,47 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# Next.js / build output
+/.next/
+/out/
+/build/
+/dist/
+/coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment files (only the example is committed)
+.env
+.env.*
+!.env.example
+
+# Local study data: database, uploaded files, indexes — never commit
+/data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Misc
+*.pem
+.vercel
+/screenshots/tmp/
