@@ -41,6 +41,14 @@ export const aiErrors = {
       "Install one with `ollama pull <model>` (for example a small multilingual model), then open Settings and click “Check again”.",
     );
   },
+  modelCrashed(model: string, detail: string) {
+    return new AppError(
+      "model_crashed",
+      `Ollama crashed while loading “${model}” (${detail.slice(0, 120)}).`,
+      502,
+      "This is usually a graphics-driver problem: the installed Ollama needs a newer GPU driver. Update your NVIDIA/AMD driver, or start Gen AI with `npm start`, which switches Ollama to CPU mode automatically when the GPU fails.",
+    );
+  },
   timeout(seconds: number) {
     return new AppError(
       "ai_timeout",

@@ -22,6 +22,9 @@ interface ShowResponse {
   thinking?: { values?: string[]; default?: string };
 }
 
+/** Model-process crashes, usually caused by a GPU driver that's too old for the installed Ollama. */
+const CRASH = /llama-server process has terminated|runner process has terminated|CUDA error|exit status 0x|device kernel image is invalid/i;
+
 const EMBED_NAME = /(embed|bge-|bge$|minilm|e5-|gte-|nomic-embed|arctic-embed|paraphrase-multilingual)/i;
 
 type ShowCache = Map<string, { at: number; data: ShowResponse | null }>;
@@ -134,6 +137,7 @@ export class OllamaProvider implements AIProvider {
     if (!res.ok) {
       const message = await readErrorText(res);
       if (res.status === 404 || /not found/i.test(message)) throw aiErrors.modelMissing(req.model);
+      if (CRASH.test(message)) throw aiErrors.modelCrashed(req.model, message);
       throw aiErrors.upstream(message);
     }
     if (!res.body) throw aiErrors.upstream("empty response");
@@ -161,7 +165,7 @@ export class OllamaProvider implements AIProvider {
         } catch {
           continue;
         }
-        if (chunk.error) throw aiErrors.upstream(chunk.error);
+        if (chunk.error) throw CRASH.test(chunk.error) ? aiErrors.modelCrashed(req.model, chunk.error) : aiErrors.upstream(chunk.error);
         const piece = chunk.message?.content ?? "";
         const thought = chunk.message?.thinking ?? "";
         if ((piece || thought) && !started) {
@@ -215,6 +219,7 @@ export class OllamaProvider implements AIProvider {
     if (!res.ok) {
       const message = await readErrorText(res);
       if (res.status === 404 || /not found/i.test(message)) throw aiErrors.modelMissing(model);
+      if (CRASH.test(message)) throw aiErrors.modelCrashed(model, message);
       throw aiErrors.upstream(message);
     }
     const data = (await res.json()) as { embeddings?: number[][] };

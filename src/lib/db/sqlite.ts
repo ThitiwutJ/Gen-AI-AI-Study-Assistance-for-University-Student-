@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import path from "node:path";
 
 /**
  * A tiny adapter over two SQLite drivers so the app installs cleanly on any laptop:
@@ -42,8 +42,25 @@ function toNumber(value: number | bigint): number {
   return typeof value === "bigint" ? Number(value) : value;
 }
 
-// Use a runtime require so bundlers never try to resolve the optional native module.
-const runtimeRequire = createRequire(import.meta.url);
+/**
+ * Load modules at runtime in a way the Next.js bundler (Turbopack) can't see or rewrite.
+ * `import.meta.url` + createRequire breaks on Windows after bundling, so we get `createRequire`
+ * through process.getBuiltinModule and resolve from the project folder instead.
+ */
+type NodeModuleApi = { createRequire: (path: string) => (id: string) => unknown };
+
+function getBuiltin<T>(id: string): T {
+  const getter = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule;
+  if (!getter) throw new Error("This Node.js version is too old (process.getBuiltinModule is missing). Use Node.js 22.13 or newer.");
+  const mod = getter.call(process, id);
+  if (!mod) throw new Error(`Built-in module ${id} is not available in this Node.js version.`);
+  return mod as T;
+}
+
+function requireFromProject(id: string): unknown {
+  const { createRequire } = getBuiltin<NodeModuleApi>("node:module");
+  return createRequire(path.join(process.cwd(), "package.json"))(id);
+}
 
 interface RawStatement {
   run(...params: SqlValue[]): { changes: number | bigint; lastInsertRowid: number | bigint };
@@ -104,14 +121,14 @@ export function openDatabase(file: string): Database {
   let firstError: unknown;
   if (process.env.GENAI_SQLITE_DRIVER !== "node") {
     try {
-      const BetterSqlite = runtimeRequire("better-sqlite3") as new (file: string) => RawDb;
+      const BetterSqlite = requireFromProject("better-sqlite3") as new (file: string) => RawDb;
       return wrap(new BetterSqlite(file), "better-sqlite3");
     } catch (error) {
       firstError = error;
     }
   }
   try {
-    const { DatabaseSync } = runtimeRequire("node:sqlite") as { DatabaseSync: new (file: string) => RawDb };
+    const { DatabaseSync } = getBuiltin<{ DatabaseSync: new (file: string) => RawDb }>("node:sqlite");
     return wrap(new DatabaseSync(file), "node:sqlite");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

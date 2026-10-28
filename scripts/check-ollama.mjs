@@ -8,18 +8,13 @@
  * what Gen AI needs: a grounded English answer with a citation, a Thai answer, quiz JSON
  * through the `format` schema, and (if installed) embeddings. Nothing is downloaded.
  */
-import fs from "node:fs";
+import path from "node:path";
+import { CPU_BASE, isCrashError, isUp, loadEnvFiles, probeModel, startCpuOllama, waitUntilUp } from "./ollama-local.mjs";
 
-// Load .env.local / .env (simple KEY=VALUE lines) so the script uses the same settings as the app.
-for (const file of [".env.local", ".env"]) {
-  if (!fs.existsSync(file)) continue;
-  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-  }
-}
+// Use the same settings as the app (.env.local / .env).
+loadEnvFiles();
 
-const BASE = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/+$/, "");
+let BASE = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/+$/, "");
 const NUM_CTX = Number(process.env.OLLAMA_NUM_CTX || 8192);
 const results = [];
 const log = (s = "") => console.log(s);
@@ -106,6 +101,32 @@ if (!chatModel) {
 }
 log(`\nTesting chat model: ${chatModel.name} (num_ctx ${NUM_CTX})`);
 log("The first request loads the model into memory and can take a while.\n");
+
+// Load the model once. If it crashes (usually a GPU driver too old for this Ollama), retry on CPU.
+let cpuChild = null;
+let mode = "normal";
+const loadCheck = await probeModel(BASE, chatModel.name, NUM_CTX);
+if (!loadCheck.ok && isCrashError(loadCheck.error)) {
+  record("Load model on GPU", "FAIL", loadCheck.error.slice(0, 160));
+  log("\n  Ollama crashed while loading the model. This usually means the graphics driver is too old");
+  log("  for the installed Ollama. Trying CPU-only mode (this does not change any settings)...\n");
+  if (!(await isUp(CPU_BASE))) {
+    cpuChild = startCpuOllama(path.resolve(process.env.DATA_DIR || "data", "ollama-cpu.log"));
+    await waitUntilUp(CPU_BASE, 30);
+  }
+  const cpuCheck = await probeModel(CPU_BASE, chatModel.name, NUM_CTX);
+  if (cpuCheck.ok) {
+    record("Load model on CPU", "PASS", `${CPU_BASE} — npm start will use CPU mode automatically`);
+    BASE = CPU_BASE;
+    mode = "cpu";
+  } else {
+    record("Load model on CPU", "FAIL", cpuCheck.error.slice(0, 160));
+  }
+} else if (!loadCheck.ok) {
+  record("Load model", "FAIL", loadCheck.error.slice(0, 160));
+} else {
+  record("Load model", "PASS", "model loaded");
+}
 const think = chatModel.thinking ? { think: false } : {};
 
 // 1. Grounded English answer with a citation
@@ -192,9 +213,14 @@ if (embedModel) {
   record("Embeddings", "WARN", "no embedding model installed — Gen AI will use keyword search. Optional: ollama pull qwen3-embedding:0.6b");
 }
 
-const fails = results.filter((r) => r.status === "FAIL").length;
+if (cpuChild) cpuChild.kill();
+const fails = results.filter((r) => r.status === "FAIL" && !(mode === "cpu" && r.name === "Load model on GPU")).length;
 const warns = results.filter((r) => r.status === "WARN").length;
 log(`\nSummary: ${results.length - fails - warns} passed, ${warns} warnings, ${fails} failed.`);
+if (mode === "cpu") {
+  log("Your GPU crashed Ollama, but CPU mode works. `npm start` switches to CPU mode automatically.");
+  log("To use the GPU again (faster), update your graphics driver (NVIDIA app or nvidia.com/drivers).");
+}
 if (fails || warns) {
   log(
     chatModel.sizeB && chatModel.sizeB < 3

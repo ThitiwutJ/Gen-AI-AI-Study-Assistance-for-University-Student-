@@ -86,6 +86,8 @@ Gen AI never downloads models by itself.
    npm start
    ```
    Open http://localhost:3000 (or http://127.0.0.1:3000). (For development with hot reload use `npm run dev` instead.)
+
+   `npm start` first checks that Ollama can load your model. If loading crashes because the graphics driver is too old for your Ollama version (`CUDA error`, `llama-server process has terminated`), it automatically starts a **CPU-only** Ollama for Gen AI on port 11435 and uses that instead. Nothing on your system is changed, and it stops when Gen AI stops. Updating the graphics driver lets Ollama use the GPU again.
 4. In the app: **Settings** shows the connection and models → **Study Materials** to upload a lecture (try the files in `samples/`) → **AI Tutor** to ask questions.
 
 On macOS/Linux the commands are the same in Terminal; start Ollama with the Ollama app or `ollama serve`.
@@ -112,7 +114,8 @@ There are no accounts, no cloud storage and no sync between devices. To reset Ge
 | Command | What it does |
 |---|---|
 | `npm run dev` | Development server with hot reload |
-| `npm run build` / `npm start` | Production build / start (this computer only) |
+| `npm run build` / `npm start` | Production build / start (this computer only; falls back to CPU-only Ollama if the GPU crashes) |
+| `npm run start:next` | Start without the Ollama check or CPU fallback |
 | `npm run start:lan` | Start so other devices on the same network can open it (no login — trusted networks only) |
 | `npm run check:ai` | Live test of your real Ollama models |
 | `npm test` | Unit + integration tests (uses a test double instead of Ollama) |
@@ -148,7 +151,8 @@ docs/               testing report, troubleshooting, demo guide, assignment answ
 - Old `.doc` / `.ppt` files aren't supported; save them as `.docx` / `.pptx`.
 - Short-answer grading is an AI suggestion, not an exact grade.
 - Single user, no login. Don't expose it on untrusted networks.
-- Tested on Linux in the build environment; Windows installation should work (Node.js 22.13+ has a built-in SQLite fallback if the `better-sqlite3` package can't install) but was not run on Windows by the builder.
+- On Windows, the optional `better-sqlite3` package often can't install; Gen AI then uses the SQLite built into Node.js 22.13+ (verified on the team laptop).
+- If the GPU driver is too old for the installed Ollama, models run on the CPU instead (slower, but a 1B model still writes about 35 tokens per second on a Ryzen 7 laptop).
 
 ## Privacy
 

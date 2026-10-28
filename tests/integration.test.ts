@@ -293,6 +293,21 @@ describe("when the local AI is unavailable", () => {
     }
   });
 
+  it("explains a model crash (GPU driver problem) instead of a raw error", async () => {
+    const crashing = await startMockOllama({ delayMs: 0, gpuCrash: true });
+    app.service.setProviderForTests(new app.ollama.OllamaProvider(crashing.url));
+    try {
+      const conv = app.convs.createConversation({ scope: "none" });
+      const done = await app.jobs.waitForJob(app.tutor.askTutor(conv.id, { content: "Hello?", scope: "none", level: "standard", language: "en" }).id);
+      expect(done.status).toBe("error");
+      expect(done.error?.code).toBe("model_crashed");
+      expect(done.error?.fix).toMatch(/driver/);
+    } finally {
+      app.service.setProviderForTests(undefined);
+      await crashing.close();
+    }
+  });
+
   it("falls back to keyword search when no embedding model is installed", async () => {
     const noEmbed = await startMockOllama({ delayMs: 0, embed: false });
     app.service.setProviderForTests(new app.ollama.OllamaProvider(noEmbed.url));

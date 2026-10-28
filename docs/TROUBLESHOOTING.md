@@ -10,6 +10,13 @@ Start with **Settings** in the app: it shows the connection state, installed mod
 - If Ollama runs on a different port or address, set `OLLAMA_BASE_URL` in `.env.local` and restart Gen AI.
 - Then click **Check again** in Settings. Your saved materials, notes and quizzes are unaffected while Ollama is off.
 
+## "Ollama crashed while loading the model" / `CUDA error` / `exit status 0xc0000409`
+
+Ollama's GPU (CUDA) build needs a recent graphics driver. With an older driver, loading any model crashes. Ollama's log (`%LOCALAPPDATA%\Ollama\server.log`) then shows `CUDA error: device kernel image is invalid`.
+
+- **Quick fix (already built in):** start Gen AI with `npm start`. It detects the crash and runs a CPU-only Ollama for Gen AI on port 11435. `npm run check:ai` does the same and tells you whether CPU mode works.
+- **Proper fix:** update the graphics driver — for NVIDIA, open the **NVIDIA app** → Drivers → download the latest Game Ready or Studio driver (or get it from nvidia.com/drivers), restart, then run `npm run check:ai` again. With a working GPU, answers are faster.
+
 ## "Model unavailable" — the selected model isn't installed
 
 - Run `ollama list` to see what's installed.
@@ -67,7 +74,7 @@ If the terminal shows `prompt used N of M context tokens`, the prompt was close 
 
 ## Installation problems
 
-- **`npm install` fails on `better-sqlite3`** — that package is optional. With Node.js 22.13 or newer, Gen AI automatically uses Node's built-in SQLite instead. Check your version with `node -v`.
+- **`better-sqlite3` didn't install** (common on Windows) — that package is optional. With Node.js 22.13 or newer, Gen AI automatically uses Node's built-in SQLite instead. Check your version with `node -v`.
 - **"No SQLite driver is available"** — update Node.js to 22.13+ (22 LTS or 24 LTS).
 - **Port 3000 in use** — `npx next start -H 127.0.0.1 -p 3001`.
 

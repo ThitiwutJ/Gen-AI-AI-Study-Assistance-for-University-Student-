@@ -9,7 +9,9 @@
  *
  * Run standalone:  node scripts/mock-ollama.mjs --port 11435
  * Options (env):   MOCK_EMBED=0 (no embedding model), MOCK_THINK=1 (add a thinking model),
- *                  MOCK_BAD_JSON=1 (first structured reply is invalid JSON), MOCK_DELAY_MS=15
+ *                  MOCK_BAD_JSON=1 (first structured reply is invalid JSON), MOCK_DELAY_MS=15,
+ *                  MOCK_GPU_CRASH=1 (loading a model fails like a broken GPU driver, unless
+ *                  CUDA_VISIBLE_DEVICES=-1 — i.e. "CPU mode" — is set)
  */
 import http from "node:http";
 
@@ -47,6 +49,7 @@ export function startMockOllama(options = {}) {
     think: options.think ?? process.env.MOCK_THINK === "1",
     badJson: options.badJson ?? process.env.MOCK_BAD_JSON === "1",
     delayMs: options.delayMs ?? Number(process.env.MOCK_DELAY_MS ?? 5),
+    gpuCrash: options.gpuCrash ?? (process.env.MOCK_GPU_CRASH === "1" && process.env.CUDA_VISIBLE_DEVICES !== "-1"),
     port: options.port ?? 0,
   };
   const requests = [];
@@ -90,8 +93,17 @@ export function startMockOllama(options = {}) {
       const inputs = Array.isArray(body.input) ? body.input : [body.input];
       return json(200, { model: body.model, embeddings: inputs.map((t) => embedText(String(t))) });
     }
+    const crash = () =>
+      json(500, { error: "llama-server process has terminated: exit status 0xc0000409: The system detected an overrun of a stack-based buffer (mock GPU crash)" });
+    if (req.url === "/api/generate") {
+      if (!model) return json(404, { error: `model '${body.model}' not found` });
+      if (opts.gpuCrash) return crash();
+      loaded.add(model.name);
+      return json(200, { model: model.name, response: "Hi", done: true, done_reason: "length" });
+    }
     if (req.url === "/api/chat") {
       if (!model) return json(404, { error: `model '${body.model}' not found` });
+      if (opts.gpuCrash) return crash();
       if (body.think !== undefined && !model.caps.includes("thinking")) return json(400, { error: `"${body.model}" does not support thinking` });
       loaded.add(model.name);
       const messages = body.messages ?? [];
@@ -177,6 +189,7 @@ export function startMockOllama(options = {}) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const portArg = process.argv.indexOf("--port");
-  const port = portArg !== -1 ? Number(process.argv[portArg + 1]) : 11435;
+  const hostPort = process.env.OLLAMA_HOST?.split(":").pop();
+  const port = portArg !== -1 ? Number(process.argv[portArg + 1]) : hostPort ? Number(hostPort) : 11435;
   startMockOllama({ port }).then(({ url }) => console.log(`Mock Ollama (TEST DOUBLE, not a real model) listening on ${url}`));
 }
