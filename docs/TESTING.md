@@ -62,6 +62,14 @@ The only browser console error was the expected 415 response for the rejected `.
 3. **No full-text search in Node.js 22.15's SQLite (fixed).** The SQLite built into Node.js 22.15 has no FTS5 module (`no such module: fts5`). Gen AI now detects this and uses its own keyword search (candidates with `LIKE`, ranked with a BM25-style score); when FTS5 becomes available (newer Node.js, or `better-sqlite3`), the index is rebuilt automatically. Verified with a production build using only the built-in driver and FTS5 switched off.
 4. **Real model results (CPU mode, `gemma3:1b`):** grounded English answer correct with `[S1]` citation in 1.7 s; Thai answer correct ("สัปดาห์ที่ 9") in 1.3 s; quiz JSON: 1 of 2 questions valid (the app drops invalid questions automatically). No embedding model installed, so search is keyword-only.
 
+## Lab 4 on the team laptop (3 November 2026)
+
+- **Models:** `qwen3:1.7b` and `nomic-embed-text` installed with `ollama pull`; Gen AI picked both automatically (Settings: chat `qwen3:1.7b`, semantic search on). Ollama still runs on the CPU fallback (port 11435) because of the GPU driver issue above.
+- **Topic PDFs:** uploaded with `npm run import` and indexed with `nomic-embed-text`: Lewis et al. 2020 (19 pages, 79 chunks), Kestin et al. 2025 (10 pages, 49 chunks), Bastani et al. 2025 (8 pages, 53 chunks).
+- **Task 1, real model:** *"What are the papers in my document collection?"* — `qwen3:1.7b` listed all 5 documents in the collection with title, file name, `Status: Indexed · N chunks` and a one-sentence description from the opening excerpt, citing D1–D5 (all citations valid, badge "From your materials"), in well under a minute on the CPU.
+- **Task 2 (bug found and fixed):** the laptop has **Internet Download Manager**, which intercepts every PDF response; the browser received an empty `204` and the PDF frame stayed blank. The material page now fetches the PDF as JSON (`?format=base64`) and shows it from a local `blob:` URL, which download managers don't touch. Verified on the laptop that the frame now loads from a `blob:` URL.
+- **Downloading the topic PDFs:** arXiv and Nature allowed scripted downloads; PNAS, SSRN and teachertaskforce.org (Cloudflare) refused them (`403`), so those PDFs were saved through the browser.
+
 ## What still needs testing on the laptop
 
 Run these on the laptop with Ollama, in the project folder:
