@@ -62,6 +62,10 @@ Local models run on your laptop's CPU/GPU, so speed depends on the hardware.
 - Open the material and look at **Extracted text**. If it's empty or garbled, the AI can't use it.
 - Use words that appear in the lecture, or install an embedding model for meaning-based search.
 
+## The original PDF doesn't show, or a download manager pops up
+
+Gen AI shows uploaded PDFs inside the page. Download managers such as **Internet Download Manager (IDM)** take over any PDF the browser fetches, so the frame stays empty and IDM offers to download a file instead. Gen AI loads the PDF in a way IDM doesn't intercept; if IDM still pops up (for example from the **Open file** button), cancel it, or add `127.0.0.1` to IDM's "Don't start downloading automatically from the following sites" list.
+
 ## Uploads
 
 - **"No readable text … probably scanned"** — the PDF pages are images. Gen AI has no OCR. Export a text-based PDF, or paste the notes.

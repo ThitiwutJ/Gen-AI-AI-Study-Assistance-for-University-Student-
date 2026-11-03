@@ -13,7 +13,8 @@ function contentDisposition(type: "inline" | "attachment", fileName: string): st
 
 /**
  * The original uploaded file. PDFs (and plain text) open in the browser; Word and PowerPoint
- * files download so they open in Office. `?download=1` always downloads.
+ * files download so they open in Office. `?download=1` always downloads; `?format=base64` returns
+ * JSON for the in-page viewer.
  */
 export const GET = handle(async (request: Request, ctx: RouteContext<"/api/documents/[id]/file">) => {
   const id = await idParam(ctx.params);
@@ -29,7 +30,12 @@ export const GET = handle(async (request: Request, ctx: RouteContext<"/api/docum
     );
   }
   const data = await fs.readFile(file.path);
-  const download = new URL(request.url).searchParams.get("download") === "1";
+  const params = new URL(request.url).searchParams;
+  if (params.get("format") === "base64") {
+    // For the in-page viewer: JSON is never taken over by download managers (IDM etc.).
+    return { fileName: file.fileName, mime: file.mime.split(";")[0], size: data.byteLength, data: data.toString("base64") };
+  }
+  const download = params.get("download") === "1";
   const text = file.fileType === "txt" || file.fileType === "md";
   const inline = !download && (file.fileType === "pdf" || text);
   let contentType = file.mime;

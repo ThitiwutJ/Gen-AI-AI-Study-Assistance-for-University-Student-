@@ -338,6 +338,11 @@ describe("original files (lab 4, task 2)", () => {
 
     const download = await getFile(pdf.id, "?download=1");
     expect(download.headers.get("content-disposition")).toMatch(/^attachment;/);
+
+    // The in-page viewer gets the bytes as JSON (download managers don't intercept JSON).
+    const json = await (await getFile(pdf.id, "?format=base64")).json();
+    expect(json.mime).toBe("application/pdf");
+    expect(Buffer.from(json.data, "base64").equals(body)).toBe(true);
   });
 
   it("downloads Word files, keeping a Thai file name", async () => {

@@ -24,15 +24,52 @@ function useLocationHash(): string {
   return useSyncExternalStore(subscribeHash, () => window.location.hash, () => "");
 }
 
-/** The uploaded PDF, shown with the browser's own PDF viewer (opened at `page`). */
+/**
+ * The uploaded PDF, shown with the browser's own PDF viewer (opened at `page`).
+ * The bytes are fetched as JSON and shown from a local blob: URL, because download managers
+ * such as Internet Download Manager grab any PDF response and the frame would stay empty.
+ */
 function OriginalFile({ id, title, page }: { id: number; title: string; page: number }) {
-  const src = `/api/documents/${id}/file`;
+  const direct = `/api/documents/${id}/file`;
+  const [loaded, setLoaded] = useState<{ id: number; url: string } | { id: number; error: string } | null>(null);
+  useEffect(() => {
+    let url: string | null = null;
+    let cancelled = false;
+    fetch(`${direct}?format=base64`)
+      .then(async (res) => {
+        const body = (await res.json()) as { data?: string; error?: { message: string } };
+        if (!res.ok || !body.data) throw new Error(body.error?.message ?? `The file couldn't be loaded (HTTP ${res.status}).`);
+        const blob = await (await fetch(`data:application/pdf;base64,${body.data}`)).blob();
+        url = URL.createObjectURL(blob);
+        if (cancelled) URL.revokeObjectURL(url);
+        else setLoaded({ id, url });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLoaded({ id, error: e instanceof Error ? e.message : String(e) });
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id, direct]);
+
+  const current = loaded?.id === id ? loaded : null;
   return (
     <div>
-      <iframe key={page} src={`${src}#page=${page}`} title={`${title} (original PDF)`} className="block h-[78vh] min-h-[420px] w-full border-0 bg-surface-2" />
+      {current && "url" in current ? (
+        <iframe key={page} src={`${current.url}#page=${page}`} title={`${title} (original PDF)`} className="block h-[78vh] min-h-[420px] w-full border-0 bg-surface-2" />
+      ) : current && "error" in current ? (
+        <div className="p-5">
+          <ErrorNotice error={{ message: current.error }} />
+        </div>
+      ) : (
+        <div className="flex h-[40vh] items-center justify-center gap-2 text-sm text-ink-2">
+          <Spinner /> Opening the PDF…
+        </div>
+      )}
       <p className="border-t border-rule px-5 py-2.5 text-[12.5px] text-ink-3">
         PDF not showing (some phone browsers can&apos;t display PDFs in a page)?{" "}
-        <a href={src} target="_blank" rel="noreferrer" className="font-medium text-action hover:underline">
+        <a href={current && "url" in current ? current.url : direct} target="_blank" rel="noreferrer" className="font-medium text-action hover:underline">
           Open it in a new tab
         </a>
         .
