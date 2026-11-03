@@ -16,15 +16,15 @@ The app was built and tested in a cloud workspace that **could not run a real AI
 | Lint | `npm run lint` | ✅ Passed, 0 problems |
 | Type-check | `npm run typecheck` | ✅ Passed |
 | Production build | `npm run build` | ✅ Passed, no warnings |
-| Unit tests | `npm test` (tests/unit.test.ts) | ✅ 24 passed |
+| Unit tests | `npm test` (tests/unit.test.ts) | ✅ 29 passed |
 | Search without FTS5 | `npm test` (tests/no-fts.test.ts) | ✅ 1 passed |
 | Extraction tests | `npm test` (tests/extract.test.ts) | ✅ 11 passed |
-| End-to-end server tests (with test double) | `npm test` (tests/integration.test.ts) | ✅ 19 passed |
+| End-to-end server tests (with test double) | `npm test` (tests/integration.test.ts) | ✅ 30 passed |
 | Browser walkthrough (headless Chromium, production build, test double) | manual script | ✅ Passed (details below) |
 | Install on the team laptop (Windows 11, Node.js 22.15, Ollama 0.40.11) | `setup-gen-ai.bat` | ✅ `npm install` and `npm run build` passed |
 | Live test against the real `gemma3:1b` on the laptop | `npm run check:ai` | See "Findings on the team laptop" below |
 
-**Total automated tests: 55 passed, 0 failed.**
+**Total automated tests: 71 passed, 0 failed** (55 at first release; 16 added for lab 4 on 3 November 2026).
 
 ### What the automated tests cover
 
@@ -35,6 +35,9 @@ The app was built and tested in a cloud workspace that **could not run a real AI
 - **Tutor:** grounded answer keeps `[S1]` and removes an invented `[S9]`; general-knowledge mode; retry after a failure without retyping; cancel; reasoning models get `think: false` and reasoning text never reaches the answer.
 - **Summaries:** note saved; a reference to a page that doesn't exist (page 999) is removed; a long document is summarized in stages.
 - **Quizzes:** JSON schema sent in `format`; every question validated (answer must be one of the options, true/false normalised, invented source labels dropped); one controlled retry after invalid JSON; deterministic grading for MCQ/TF and AI grading for short answers.
+- **Document collection (lab 4, task 1):** "What are the papers in my document collection?" sends every document's file name, `Indexed · N chunks` status and opening excerpt (and no passages); the answer keeps real `[D1]` citations and removes an invented `[D99]`; the "Documents in your collection" sources come from the database; a question limited to one material lists only that one; ordinary prompts give each passage's file name. Collection questions in English and Thai are recognised and ordinary questions are not; the collection is fitted to the prompt budget (excerpts dropped first).
+- **Original files (lab 4, task 2):** the PDF is served byte-for-byte with `application/pdf` and `inline`; `?download=1` downloads; Word files download with their Thai file name (RFC 5987, header stays ASCII); pasted notes give a clear "no original file" 404; unknown ids 404.
+- **Search depth and time limits (lab 4 hint):** "each document" questions run one extra search per document and get passages from every document; multi-part questions are searched part by part; *Passages per answer* limits the passages; a slow answer stops at the time limit with `ai_timeout`; the *Time limit per answer* setting is saved and used; `nomic-embed-text` gets its `search_document:` / `search_query:` prefixes.
 - **Failure handling:** Ollama not running → clear "not running" status with start instructions, tutor job fails with `ai_not_running`, saved materials and notes still available.
 
 ### Browser walkthrough

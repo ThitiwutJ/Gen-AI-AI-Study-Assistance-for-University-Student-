@@ -9,7 +9,9 @@ import { checkGarbled, detectLanguage } from "@/lib/documents/text-utils";
 import { sanitizeUnitRefs } from "@/lib/features/summaries";
 import { normalizeTrueFalse, validateQuestion } from "@/lib/features/quizzes";
 import { sanitizeCitations } from "@/lib/retrieval/citations";
-import { buildFtsQuery, cosine } from "@/lib/retrieval/search";
+import { collectionBlock, isCollectionQuestion, isPerDocumentQuestion, type CollectionEntry } from "@/lib/retrieval/collection";
+import { buildFtsQuery, cosine, searchQueries } from "@/lib/retrieval/search";
+import type { DocumentSummary } from "@/lib/types";
 
 const model = (name: string, extra: Partial<ProviderModel> = {}): ProviderModel => ({
   name,
@@ -42,6 +44,74 @@ describe("citations", () => {
     expect(r.text).toBe("Fact one [S1]. Fact two [S2]. Made up.");
     expect([...r.cited].sort()).toEqual(["S1", "S2"]);
     expect(r.removed.sort()).toEqual(["S7", "S9"]);
+  });
+
+  it("also checks document labels from the collection overview", () => {
+    const r = sanitizeCitations("Two papers: A [D1] and B [D2, S1]. Invented [D7].", new Set(["D1", "D2", "S1"]));
+    expect(r.text).toBe("Two papers: A [D1] and B [D2][S1]. Invented.");
+    expect([...r.cited].sort()).toEqual(["D1", "D2", "S1"]);
+    expect(r.removed).toEqual(["D7"]);
+  });
+});
+
+describe("document collection questions", () => {
+  it("recognises questions about the collection itself", () => {
+    for (const q of [
+      "What are the papers in my document collection?",
+      "Which files did I upload?",
+      "List all my documents",
+      "How many PDFs do I have?",
+      "what documents are there",
+      "Show me my collection",
+      "เอกสารที่อัปโหลดมีอะไรบ้าง",
+      "มีไฟล์อะไรบ้าง",
+    ]) {
+      expect(isCollectionQuestion(q), q).toBe(true);
+    }
+    for (const q of ["What is the late penalty for problem sets?", "Explain compound interest", "What does the paper say about bias?", "การสอบย่อยครั้งที่ 2 จัดสัปดาห์ไหน"]) {
+      expect(isCollectionQuestion(q), q).toBe(false);
+    }
+  });
+
+  it("recognises questions that need every document", () => {
+    expect(isPerDocumentQuestion("Summarize each paper in two sentences")).toBe(true);
+    expect(isPerDocumentQuestion("Compare the papers on AI tutoring")).toBe(true);
+    expect(isPerDocumentQuestion("สรุปแต่ละเอกสาร")).toBe(true);
+    expect(isPerDocumentQuestion("What is present value?")).toBe(false);
+  });
+
+  it("splits multi-part questions into extra searches", () => {
+    expect(searchQueries("What is present value?")).toEqual(["What is present value?"]);
+    expect(searchQueries("What is present value? How is it discounted?")).toEqual([
+      "What is present value? How is it discounted?",
+      "What is present value?",
+      "How is it discounted?",
+    ]);
+  });
+
+  const entry = (i: number, opening = "x".repeat(400)): CollectionEntry => ({
+    label: `D${i}`,
+    doc: { id: i, title: `Paper ${i}`, fileName: `paper-${i}.pdf`, fileType: "pdf", unitKind: "page", unitCount: 10, sizeBytes: 300_000, courseName: null, description: null } as DocumentSummary,
+    status: "Indexed · 20 chunks",
+    opening,
+  });
+
+  it("fits the collection to the budget: excerpts go first, then documents", () => {
+    const entries = [1, 2, 3, 4, 5].map((i) => entry(i));
+    const full = collectionBlock(entries, 5000, true);
+    expect(full.listed).toHaveLength(5);
+    expect(full.text).toContain("The student has uploaded 5 documents:");
+    expect(full.text).toContain("[D5] Paper 5\nFile: paper-5.pdf (PDF, 10 pages, 293.0 KB)\nStatus: Indexed · 20 chunks\nOpening excerpt:");
+
+    const noExcerpts = collectionBlock(entries, 300, true);
+    expect(noExcerpts.listed).toHaveLength(5);
+    expect(noExcerpts.text).not.toContain("Opening excerpt");
+
+    const partial = collectionBlock(entries, 90, true);
+    expect(partial.listed.length).toBeLessThan(5);
+    expect(partial.text).toMatch(/uploaded 5 documents \(the first \d are listed\)/);
+
+    expect(collectionBlock(entries, 5000, false, true).text).toContain("The student selected 5 documents for this question:");
   });
 });
 

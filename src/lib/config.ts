@@ -42,12 +42,12 @@ export const config = {
   numCtx: int("OLLAMA_NUM_CTX", 8192, 2048, 262144),
 
   /** Maximum time for one AI request (model load + generation). */
-  requestTimeoutMs: int("AI_REQUEST_TIMEOUT_MS", 600_000, 30_000, 3_600_000),
+  requestTimeoutMs: int("AI_REQUEST_TIMEOUT_MS", 600_000, 30_000, 7_200_000),
 
   // Local data folder; the comment stops Next.js from tracing the whole project for deployment.
   dataDir: path.resolve(/*turbopackIgnore: true*/ process.cwd(), str("DATA_DIR") ?? "data"),
 
-  maxUploadBytes: int("MAX_UPLOAD_MB", 25, 1, 200) * 1024 * 1024,
+  maxUploadBytes: int("MAX_UPLOAD_MB", 50, 1, 200) * 1024 * 1024,
 
   /** Minimum cosine similarity for a vector-search hit to count as relevant. */
   minSimilarity: Number.parseFloat(process.env.RETRIEVAL_MIN_SIMILARITY ?? "0.3") || 0.3,

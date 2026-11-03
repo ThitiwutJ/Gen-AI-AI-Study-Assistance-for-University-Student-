@@ -205,6 +205,170 @@ describe("AI tutor", () => {
   });
 });
 
+describe("document collection (lab 4, task 1)", () => {
+  it("answers 'What are the papers in my document collection?' with file names, index status and opening excerpts", async () => {
+    const conv = app.convs.createConversation({ scope: "all" });
+    const before = mock.requests.length;
+    const job = app.tutor.askTutor(conv.id, { content: "What are the papers in my document collection?", scope: "all", level: "standard", language: "auto" });
+    expect((await app.jobs.waitForJob(job.id)).status).toBe("done");
+    const answer = app.convs.getConversation(conv.id)!.messages[1];
+
+    // What the model was given: every document with file name, status and opening excerpt.
+    const chat = mock.requests.slice(before).find((r) => r.url === "/api/chat")!;
+    const prompt = String((chat.body.messages as { content: string }[]).at(-1)!.content);
+    expect(prompt).toContain("DOCUMENT COLLECTION:");
+    expect(prompt).toContain("File: fin101-time-value-of-money.pdf");
+    expect(prompt).toContain("File: fin101-compound-interest-thai.docx");
+    expect(prompt).toMatch(/Status: Indexed · \d+ chunks/);
+    expect(prompt).toContain("Opening excerpt:");
+    expect(prompt).not.toContain("SOURCES:");
+
+    // The answer names each file and keeps only real document citations.
+    expect(answer.content).toContain("fin101-time-value-of-money.pdf");
+    expect(answer.content).toMatch(/Indexed · \d+ chunks/);
+    expect(answer.content).toContain("[D1]");
+    expect(answer.content).not.toContain("[D99]");
+    expect(answer.meta?.removedCitations).toEqual(["D99"]);
+    expect(answer.meta?.grounding).toBe("materials");
+    const docs = answer.sources.filter((s) => s.kind === "document");
+    expect(docs.map((d) => d.fileName)).toEqual(["fin101-time-value-of-money.pdf", "fin101-compound-interest-thai.docx"]);
+    expect(docs[0].status).toMatch(/^Indexed · \d+ chunks$/);
+    expect(docs[0].excerpt.length).toBeGreaterThan(20);
+  });
+
+  it("lists only the selected documents when the question is limited to some materials", async () => {
+    const pdf = app.repo.listDocuments().find((d) => d.fileType === "pdf")!;
+    const conv = app.convs.createConversation({ scope: "documents", documentIds: [pdf.id] });
+    const job = app.tutor.askTutor(conv.id, { content: "Which files did I upload?", scope: "documents", documentIds: [pdf.id], level: "standard", language: "en" });
+    expect((await app.jobs.waitForJob(job.id)).status).toBe("done");
+    const answer = app.convs.getConversation(conv.id)!.messages[1];
+    expect(answer.sources.filter((s) => s.kind === "document").map((d) => d.documentId)).toEqual([pdf.id]);
+  });
+
+  it("names the document behind each passage in ordinary questions", async () => {
+    const conv = app.convs.createConversation({ scope: "all" });
+    const before = mock.requests.length;
+    const job = app.tutor.askTutor(conv.id, { content: "What is the late penalty for problem sets?", scope: "all", level: "standard", language: "en" });
+    expect((await app.jobs.waitForJob(job.id)).status).toBe("done");
+    const chat = mock.requests.slice(before).find((r) => r.url === "/api/chat")!;
+    const prompt = String((chat.body.messages as { content: string }[]).at(-1)!.content);
+    expect(prompt).toContain("DOCUMENT COLLECTION:");
+    expect(prompt).toContain("SOURCES:");
+    expect(prompt).toMatch(/\[S1\] .*\(p\. 4, file fin101-time-value-of-money\.pdf\)/);
+  });
+});
+
+describe("search depth and time limits (lab 4 hint)", () => {
+  it("searches every document separately for questions about each paper", async () => {
+    const conv = app.convs.createConversation({ scope: "all" });
+    const job = app.tutor.askTutor(conv.id, { content: "Summarize the main idea of each document about interest", scope: "all", level: "standard", language: "en" });
+    expect((await app.jobs.waitForJob(job.id)).status).toBe("done");
+    const answer = app.convs.getConversation(conv.id)!.messages[1];
+    expect(answer.meta?.searches).toBe(3); // the whole question + one per document
+    expect(new Set(answer.sources.map((s) => s.documentId)).size).toBe(2);
+  });
+
+  it("searches each part of a multi-part question", async () => {
+    const conv = app.convs.createConversation({ scope: "all" });
+    const job = app.tutor.askTutor(conv.id, {
+      content: "What is the late penalty for problem sets? When is the second quiz held?",
+      scope: "all",
+      level: "standard",
+      language: "en",
+    });
+    expect((await app.jobs.waitForJob(job.id)).status).toBe("done");
+    expect(app.convs.getConversation(conv.id)!.messages[1].meta?.searches).toBe(3);
+  });
+
+  it("uses the 'passages per answer' setting", async () => {
+    app.settings.saveSettings({ passages: 2 });
+    try {
+      const conv = app.convs.createConversation({ scope: "all" });
+      const job = app.tutor.askTutor(conv.id, { content: "Explain compound interest and present value", scope: "all", level: "standard", language: "en" });
+      expect((await app.jobs.waitForJob(job.id)).status).toBe("done");
+      const answer = app.convs.getConversation(conv.id)!.messages[1];
+      expect(answer.sources.filter((s) => s.kind !== "document").length).toBeLessThanOrEqual(2);
+      expect(answer.meta?.passages).toBeLessThanOrEqual(2);
+    } finally {
+      app.settings.saveSettings({ passages: 8 });
+    }
+  });
+
+  it("stops a slow answer at the time limit with a clear message", async () => {
+    const slow = await startMockOllama({ delayMs: 200 });
+    try {
+      const provider = new app.ollama.OllamaProvider(slow.url);
+      await expect(
+        provider.chat({ model: "mock-chat:1b", messages: [{ role: "user", content: "Hello" }], numCtx: 2048, timeoutMs: 150 }),
+      ).rejects.toMatchObject({ code: "ai_timeout" });
+    } finally {
+      await slow.close();
+    }
+    expect(app.settings.getSettings().timeoutMinutes).toBe(10);
+    expect(app.settings.saveSettings({ timeoutMinutes: 30 }).timeoutMinutes).toBe(30);
+    expect(app.settings.answerTimeoutMs()).toBe(30 * 60_000);
+    app.settings.saveSettings({ timeoutMinutes: 10 });
+  });
+
+  it("marks passages and questions for nomic-embed-text", async () => {
+    const { embedPrefix } = await import("@/lib/ai/embed-prefix");
+    expect(embedPrefix("nomic-embed-text:latest", "document")).toBe("search_document: ");
+    expect(embedPrefix("nomic-embed-text:latest", "query")).toBe("search_query: ");
+    expect(embedPrefix("qwen3-embedding:0.6b", "query")).toBe("");
+  });
+});
+
+describe("original files (lab 4, task 2)", () => {
+  async function getFile(id: number, query = "") {
+    const route = await import("@/app/api/documents/[id]/file/route");
+    return route.GET(new Request(`http://localhost/api/documents/${id}/file${query}`), { params: Promise.resolve({ id: String(id) }) } as never);
+  }
+
+  it("shows an uploaded PDF in the browser", async () => {
+    const pdf = app.repo.listDocuments().find((d) => d.fileType === "pdf")!;
+    expect(pdf.hasFile).toBe(true);
+    const res = await getFile(pdf.id);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(res.headers.get("content-disposition")).toMatch(/^inline; filename="fin101-time-value-of-money\.pdf"/);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    const body = Buffer.from(await res.arrayBuffer());
+    expect(body.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(body.equals(fs.readFileSync("samples/fin101-time-value-of-money.pdf"))).toBe(true);
+
+    const download = await getFile(pdf.id, "?download=1");
+    expect(download.headers.get("content-disposition")).toMatch(/^attachment;/);
+  });
+
+  it("downloads Word files, keeping a Thai file name", async () => {
+    const thaiName = "บทเรียน ดอกเบี้ยทบต้น.docx";
+    const doc = await app.ingest.ingestDocument({ file: { name: thaiName, buffer: fs.readFileSync("samples/fin101-compound-interest-thai.docx") } });
+    try {
+      const res = await getFile(doc.id);
+      expect(res.headers.get("content-type")).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      const disposition = res.headers.get("content-disposition")!;
+      expect(disposition).toMatch(/^attachment;/);
+      expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent(thaiName)}`);
+      expect(/^[\x20-\x7e]*$/.test(disposition)).toBe(true); // header stays ASCII
+    } finally {
+      app.repo.deleteDocument(doc.id);
+    }
+  });
+
+  it("explains that pasted notes have no original file, and 404s unknown materials", async () => {
+    const pasted = await app.ingest.ingestDocument({ pastedText: "Opportunity cost is the value of the next best alternative given up.", title: "Pasted" });
+    try {
+      expect(pasted.hasFile).toBe(false);
+      const res = await getFile(pasted.id);
+      expect(res.status).toBe(404);
+      expect((await res.json()).error.code).toBe("no_file");
+    } finally {
+      app.repo.deleteDocument(pasted.id);
+    }
+    expect((await getFile(999999)).status).toBe(404);
+  });
+});
+
 describe("summaries", () => {
   it("creates a saved note and removes references to pages that don't exist", async () => {
     const doc = app.repo.listDocuments().find((d) => d.fileType === "pdf")!;

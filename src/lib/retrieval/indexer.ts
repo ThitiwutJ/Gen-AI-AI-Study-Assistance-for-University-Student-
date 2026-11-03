@@ -3,6 +3,7 @@ import { fromFloat32 } from "@/lib/db/sqlite";
 import { AppError } from "@/lib/errors";
 import { getProvider, resolveModels } from "@/lib/ai/service";
 import { setIndexState } from "@/lib/documents/repo";
+import { embedPrefix } from "@/lib/ai/embed-prefix";
 
 /**
  * Background embedding of document chunks with the local embedding model (POST /api/embed).
@@ -82,7 +83,8 @@ export async function indexDocument(documentId: number): Promise<void> {
   try {
     for (let i = 0; i < pending.length; i += BATCH) {
       const batch = pending.slice(i, i + BATCH);
-      const inputs = batch.map((c) => `${doc.title}${c.heading ? ` — ${c.heading}` : ""}\n${c.text}`);
+      const prefix = embedPrefix(model, "document");
+      const inputs = batch.map((c) => `${prefix}${doc.title}${c.heading ? ` — ${c.heading}` : ""}\n${c.text}`);
       const vectors = await getProvider().embed(model, inputs, { numCtx });
       db.transaction(() => {
         batch.forEach((c, j) => update.run(fromFloat32(vectors[j]), model, vectors[j].length, c.id));

@@ -2,16 +2,44 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowLeft, ListChecks, MessagesSquare, NotebookPen, RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { AlertTriangle, ArrowLeft, Download, ExternalLink, FileText, ListChecks, MessagesSquare, NotebookPen, RefreshCw, Trash2 } from "lucide-react";
 import { DocIcon, IndexBadge, unitWord } from "@/components/shared";
 import { PageContainer } from "@/components/shell/AppShell";
 import { useToast } from "@/components/shell/providers";
-import { Badge, Button, ConfirmDialog, ErrorNotice, Panel, PanelHeader, Spinner, cx, formatBytes, formatDate } from "@/components/ui";
+import { Badge, Button, ConfirmDialog, ErrorNotice, Panel, PanelHeader, Segmented, Spinner, buttonClass, cx, formatBytes, formatDate } from "@/components/ui";
 import { api, useApi } from "@/hooks/api";
 import type { DocumentDetail, NoteSummary } from "@/lib/types";
 
 const TYPE_LABEL: Record<string, string> = { pdf: "PDF", docx: "Word", pptx: "PowerPoint", txt: "Text", md: "Markdown", paste: "Pasted notes" };
+const OPENS_IN_BROWSER = new Set(["pdf", "txt", "md"]);
+
+function subscribeHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+/** The URL hash (#u-3 links to a cited page), kept in sync when it changes. */
+function useLocationHash(): string {
+  return useSyncExternalStore(subscribeHash, () => window.location.hash, () => "");
+}
+
+/** The uploaded PDF, shown with the browser's own PDF viewer (opened at `page`). */
+function OriginalFile({ id, title, page }: { id: number; title: string; page: number }) {
+  const src = `/api/documents/${id}/file`;
+  return (
+    <div>
+      <iframe key={page} src={`${src}#page=${page}`} title={`${title} (original PDF)`} className="block h-[78vh] min-h-[420px] w-full border-0 bg-surface-2" />
+      <p className="border-t border-rule px-5 py-2.5 text-[12.5px] text-ink-3">
+        PDF not showing (some phone browsers can&apos;t display PDFs in a page)?{" "}
+        <a href={src} target="_blank" rel="noreferrer" className="font-medium text-action hover:underline">
+          Open it in a new tab
+        </a>
+        .
+      </p>
+    </div>
+  );
+}
 
 export default function MaterialDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +49,12 @@ export default function MaterialDetailPage() {
   const notes = useApi<NoteSummary[]>(`/api/notes?documentId=${id}`);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A link to a cited page (#u-3) opens the extracted text; otherwise a PDF opens as the original file.
+  // A choice made with the tabs holds until the link (hash) changes.
+  const hash = useLocationHash();
+  const [viewChoice, setViewChoiceState] = useState<{ view: "file" | "text"; hash: string } | null>(null);
+  const setViewChoice = (view: "file" | "text") => setViewChoiceState({ view, hash });
+  const [pdfPage, setPdfPage] = useState(1);
 
   const d = doc.data;
   const reload = doc.reload;
@@ -34,15 +68,13 @@ export default function MaterialDetailPage() {
   // Jump to a cited page (#u-3) once the text has loaded.
   const loaded = Boolean(d);
   useEffect(() => {
-    if (!loaded) return;
-    const hash = window.location.hash;
-    if (!hash.startsWith("#u-")) return;
+    if (!loaded || !hash.startsWith("#u-")) return;
     const el = document.getElementById(hash.slice(1));
     if (el) {
       el.scrollIntoView({ block: "start" });
       el.classList.add("source-flash");
     }
-  }, [loaded]);
+  }, [loaded, hash]);
 
   async function reindex() {
     try {
@@ -86,6 +118,10 @@ export default function MaterialDetailPage() {
     );
   }
 
+  const canShowPdf = d.fileType === "pdf" && d.hasFile;
+  const view = !canShowPdf ? "text" : viewChoice && viewChoice.hash === hash ? viewChoice.view : hash.startsWith("#u-") ? "text" : "file";
+  const fileUrl = `/api/documents/${d.id}/file`;
+
   return (
     <PageContainer wide>
       <Link href="/materials" className="mb-4 inline-flex items-center gap-1 text-[13px] font-medium text-ink-2 hover:text-ink">
@@ -109,6 +145,16 @@ export default function MaterialDetailPage() {
           {d.description && <p className="mt-1 max-w-[70ch] text-ink-2">{d.description}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
+          {d.hasFile &&
+            (OPENS_IN_BROWSER.has(d.fileType) ? (
+              <a href={fileUrl} target="_blank" rel="noreferrer" className={buttonClass()}>
+                <ExternalLink className="size-4" aria-hidden /> Open file
+              </a>
+            ) : (
+              <a href={`${fileUrl}?download=1`} download={d.fileName ?? undefined} className={buttonClass()}>
+                <Download className="size-4" aria-hidden /> Download file
+              </a>
+            ))}
           <Link href={`/tutor?doc=${d.id}`}>
             <Button variant="primary" icon={<MessagesSquare className="size-4" />} disabled={!d.searchable}>
               Ask about this
@@ -135,19 +181,56 @@ export default function MaterialDetailPage() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <Panel className="min-w-0">
-          <PanelHeader title="Extracted text" description={`${unitWord(d.unitKind, d.unitCount)}. This is exactly what the AI reads.`} />
-          <div className="divide-y divide-rule">
-            {d.units.map((u) => (
-              <article key={u.index} id={`u-${u.index}`} className="scroll-mt-20 px-5 py-5">
-                <h2 className="mb-2 flex items-baseline gap-2 text-[13px] font-semibold text-ink-3">
-                  <span>{u.label}</span>
-                  {u.heading && d.unitKind !== "page" && <span className="truncate font-normal">{u.heading}</span>}
-                </h2>
-                <div className="reading whitespace-pre-line text-[15.5px]">{u.text}</div>
-              </article>
-            ))}
+        <Panel className="min-w-0 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-5 py-3">
+            <div className="min-w-0">
+              <h2 className="text-[15px] font-semibold">{view === "file" ? "Original file" : "Extracted text"}</h2>
+              <p className="text-[13px] text-ink-2">
+                {view === "file"
+                  ? `${d.fileName ?? d.title}, ${unitWord(d.unitKind, d.unitCount)}${d.sizeBytes ? `, ${formatBytes(d.sizeBytes)}` : ""}`
+                  : `${unitWord(d.unitKind, d.unitCount)}. This is exactly what the AI reads.`}
+              </p>
+            </div>
+            {canShowPdf && (
+              <Segmented
+                label="Show"
+                value={view}
+                onChange={(v) => setViewChoice(v)}
+                options={[
+                  { value: "file", label: "Original PDF" },
+                  { value: "text", label: "Extracted text" },
+                ]}
+              />
+            )}
           </div>
+          {view === "file" ? (
+            <OriginalFile id={d.id} title={d.title} page={pdfPage} />
+          ) : (
+            <div className="divide-y divide-rule">
+              {d.units.map((u) => (
+                <article key={u.index} id={`u-${u.index}`} className="scroll-mt-20 px-5 py-5">
+                  <h2 className="mb-2 flex flex-wrap items-baseline gap-x-2 text-[13px] font-semibold text-ink-3">
+                    <span>{u.label}</span>
+                    {u.heading && d.unitKind !== "page" && <span className="truncate font-normal">{u.heading}</span>}
+                    {canShowPdf && (
+                      <button
+                        type="button"
+                        className="ml-auto inline-flex items-center gap-1 font-medium text-action hover:underline"
+                        onClick={() => {
+                          setPdfPage(u.index);
+                          setViewChoice("file");
+                          window.scrollTo({ top: 0 });
+                        }}
+                      >
+                        <FileText className="size-3.5" aria-hidden /> View in PDF
+                      </button>
+                    )}
+                  </h2>
+                  <div className="reading whitespace-pre-line text-[15.5px]">{u.text}</div>
+                </article>
+              ))}
+            </div>
+          )}
         </Panel>
 
         <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
@@ -180,6 +263,7 @@ export default function MaterialDetailPage() {
             <dl className="space-y-2 p-4 text-sm">
               {[
                 ["File", d.fileName ?? "Pasted notes"],
+                ["Chunks", `${d.chunkCount} passages for search`],
                 ["Size", formatBytes(d.sizeBytes) || "—"],
                 ["Length", `${unitWord(d.unitKind, d.unitCount)}, ${d.wordCount.toLocaleString()} words`],
                 ["Language", d.language === "th" ? "Thai" : d.language === "mixed" ? "Thai and English" : "English"],

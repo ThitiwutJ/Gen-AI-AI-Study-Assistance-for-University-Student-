@@ -1,7 +1,7 @@
 import { config } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { aiErrors, AppError } from "@/lib/errors";
-import { getSettings } from "@/lib/settings";
+import { answerTimeoutMs, getSettings } from "@/lib/settings";
 import type { AIProblem, AIStatus, ModelView } from "@/lib/types";
 import { OllamaProvider } from "./ollama";
 import { OpenAICompatibleProvider } from "./openai-compatible";
@@ -268,6 +268,8 @@ export interface GenerateOptions {
   signal?: AbortSignal;
   onToken?: (partial: string, tokens: number) => void;
   onFirstToken?: () => void;
+  /** Overrides the "Time limit per answer" setting. */
+  timeoutMs?: number;
 }
 
 export interface GenerateResult extends ChatResult {
@@ -302,6 +304,7 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     format: opts.format,
     think: thinkValue(model),
     signal: opts.signal,
+    timeoutMs: opts.timeoutMs ?? answerTimeoutMs(),
     onToken: opts.onToken,
     onFirstToken: opts.onFirstToken,
   });

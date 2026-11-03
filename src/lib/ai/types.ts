@@ -16,6 +16,8 @@ export interface ChatRequest {
   /** Only sent to models that support thinking. */
   think?: boolean | string;
   signal?: AbortSignal;
+  /** Time limit for the whole request (loading, reading the prompt and writing the answer). */
+  timeoutMs?: number;
   /** Called as text arrives (content only, never reasoning). */
   onToken?: (partialContent: string, tokenCount: number) => void;
   /** Called once the model starts producing output (i.e. it has finished loading). */

@@ -130,6 +130,7 @@ export class OllamaProvider implements AIProvider {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: req.signal,
+      timeoutMs: req.timeoutMs,
       providerKind: "ollama",
       baseUrl: this.baseUrl,
     });

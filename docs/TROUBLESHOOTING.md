@@ -46,7 +46,8 @@ Local models run on your laptop's CPU/GPU, so speed depends on the hardware.
 - Use a smaller model, or lower the **context window** in Settings (e.g. 4,096). Smaller context = less memory and faster, but fewer passages per answer.
 - Select specific materials instead of "All my materials", and ask focused questions.
 - Close other heavy apps. Long summaries of big lectures run several model calls; the progress bar shows each part.
-- If requests time out, raise `AI_REQUEST_TIMEOUT_MS` in `.env.local` (default 10 minutes).
+- If answers time out on difficult questions, raise **Time limit per answer** in Settings (default 10 minutes, up to 60). `AI_REQUEST_TIMEOUT_MS` in `.env.local` sets the default.
+- **Passages per answer** in Settings: fewer passages (4) are faster; more (12–16) help broad questions but need a larger context window (16,384).
 
 ## Answers are poor, in the wrong language, or quizzes fail
 
@@ -66,7 +67,7 @@ Local models run on your laptop's CPU/GPU, so speed depends on the hardware.
 - **"No readable text … probably scanned"** — the PDF pages are images. Gen AI has no OCR. Export a text-based PDF, or paste the notes.
 - **Thai PDF warning about font encoding** — some Thai PDFs use old fonts whose text can't be extracted correctly. The text is saved so you can look at it but isn't used for answers. Try exporting the PDF again from Word/PowerPoint, upload the .docx/.pptx instead, or paste the text.
 - **Old .doc / .ppt** — open and save as .docx / .pptx.
-- **File too large** — the default limit is 25 MB (`MAX_UPLOAD_MB`). Split the document or raise the limit.
+- **File too large** — the default limit is 50 MB (`MAX_UPLOAD_MB`). Split the document or raise the limit.
 
 ## Context window warnings in the terminal
 

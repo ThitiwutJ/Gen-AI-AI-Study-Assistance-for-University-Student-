@@ -38,6 +38,19 @@ function parseSources(text) {
   return out;
 }
 
+/** [D1] entries from the DOCUMENT COLLECTION block. */
+function parseCollection(text) {
+  const block = text.split("DOCUMENT COLLECTION:\n")[1]?.split(/\n\n(?:SOURCES|QUESTION):/)[0] ?? "";
+  const out = [];
+  const re = /\[(D\d+)\] ([^\n]*)\nFile: ([^\n]*)\nStatus: ([^\n]*)(?:\n(?!\[D)[^\n]*)*/g;
+  let m;
+  while ((m = re.exec(block))) {
+    const opening = m[0].match(/Opening excerpt: ([^\n]*)/)?.[1] ?? "";
+    out.push({ label: m[1], title: m[2], file: m[3].replace(/ \(.*$/, ""), status: m[4], opening });
+  }
+  return out;
+}
+
 function firstSentence(text) {
   const s = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?。])\s/)[0] ?? text;
   return s.length > 140 ? `${s.slice(0, 137)}…` : s;
@@ -143,6 +156,13 @@ export function startMockOllama(options = {}) {
         }
       } else if (/combine partial study notes|study notes|lecture summary|overview/i.test(system)) {
         content = `## (Mock summary — test double, not a real model)\n\n- First point from the material (page 1)\n- A reference the document does not have (page 999)\n- Formula: $FV = PV(1+r)^n$`;
+      } else if (/about the student's document collection itself/.test(system)) {
+        const docs = parseCollection(last);
+        content = docs.length
+          ? `The papers in your document collection are (mock answer, test double):\n\n${docs
+              .map((d, i) => `${i + 1}. **${d.file}** - ${d.status}\n   - Opening excerpt: ${firstSentence(d.opening || d.title)} [${d.label}]`)
+              .join("\n")}\n\nAn invented document that must be removed [D99].`
+          : "No documents have been uploaded yet (mock answer).";
       } else {
         const sources = parseSources(last);
         const question = last.split("QUESTION:\n").pop()?.slice(0, 120) ?? last.slice(0, 120);

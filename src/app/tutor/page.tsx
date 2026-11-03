@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, Check, ChevronDown, Copy, Lightbulb, MessageSquarePlus, PanelLeft, Pencil, SendHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { BookMarked, Check, ChevronDown, Copy, Library, Lightbulb, MessageSquarePlus, PanelLeft, Pencil, SendHorizontal, Sparkles, Trash2 } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { AIReadiness, JobProgress, ScopePicker, useJobActivity, type ScopeValue } from "@/components/shared";
 import { useAIStatus, useToast } from "@/components/shell/providers";
@@ -12,6 +12,7 @@ import { api, ApiError, useApi, useJob } from "@/hooks/api";
 import type { ConversationDetail, ConversationSummary, Course, DocumentSummary, LanguagePref, Level, MessageView, SourceRef } from "@/lib/types";
 
 const SUGGESTIONS = [
+  "What are the papers in my document collection?",
   "Explain this like I'm learning it for the first time.",
   "Give me a practical example.",
   "Explain this step by step.",
@@ -36,51 +37,96 @@ function GroundingBadge({ message }: { message: MessageView }) {
   return null;
 }
 
+function PassageItem({ s, highlight, expanded, onToggle }: { s: SourceRef; highlight: string | null; expanded: boolean; onToggle: () => void }) {
+  return (
+    <li
+      id={`source-${s.label}`}
+      className={cx("rounded-md border px-3 py-2 text-[13px] transition-colors", highlight === s.label ? "border-mark-strong bg-mark/40" : "border-rule bg-surface")}
+    >
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="cite !m-0 !text-[11px]">{s.label}</span>
+        <Link href={`/materials/${s.documentId}#u-${s.unitStart}`} className="font-medium text-ink hover:text-action hover:underline">
+          {s.documentTitle}
+        </Link>
+        <span className="text-ink-3">{s.location}</span>
+        {!s.cited && <span className="text-ink-3">(retrieved, not cited)</span>}
+      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={cx("mt-1 block w-full text-left font-[family-name:var(--font-reading)] text-ink-2", !expanded && "line-clamp-2")}
+        aria-expanded={expanded}
+        title={expanded ? "Show less" : "Show the full excerpt"}
+      >
+        {s.excerpt}
+      </button>
+    </li>
+  );
+}
+
+function DocumentItem({ s, highlight }: { s: SourceRef; highlight: string | null }) {
+  return (
+    <li
+      id={`source-${s.label}`}
+      className={cx("rounded-md border px-3 py-2 text-[13px] transition-colors", highlight === s.label ? "border-mark-strong bg-mark/40" : "border-rule bg-surface")}
+    >
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="cite !m-0 !text-[11px]">{s.label}</span>
+        <Link href={`/materials/${s.documentId}`} className="font-medium text-ink hover:text-action hover:underline" title="Open this document">
+          {s.fileName ?? s.documentTitle}
+        </Link>
+        {s.fileName && s.fileName !== s.documentTitle && <span className="text-ink-3">{s.documentTitle}</span>}
+      </div>
+      <p className="mt-0.5 text-ink-3">
+        {s.status}
+        {s.location ? `, ${s.location}` : ""}
+      </p>
+      {s.excerpt && <p className="mt-1 line-clamp-2 font-[family-name:var(--font-reading)] text-ink-2">Opening excerpt: {s.excerpt}</p>}
+    </li>
+  );
+}
+
 function SourcesList({ sources, highlight }: { sources: SourceRef[]; highlight: string | null }) {
   const [showOthers, setShowOthers] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   if (!sources.length) return null;
-  const cited = sources.filter((s) => s.cited);
-  const others = sources.filter((s) => !s.cited);
-  const shown = cited.length ? [...cited, ...(showOthers ? others : [])] : sources;
+  const documents = sources.filter((s) => s.kind === "document");
+  const passages = sources.filter((s) => s.kind !== "document");
+  const cited = passages.filter((s) => s.cited);
+  const others = passages.filter((s) => !s.cited);
+  const shown = cited.length ? [...cited, ...(showOthers ? others : [])] : passages;
 
   return (
-    <div className="mt-4 border-t border-rule pt-3">
-      <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ink-2">
-        <BookMarked className="size-3.5" aria-hidden /> Sources from your materials
-      </p>
-      <ol className="space-y-1.5">
-        {shown.map((s) => (
-          <li
-            key={s.label}
-            id={`source-${s.label}`}
-            className={cx("rounded-md border px-3 py-2 text-[13px] transition-colors", highlight === s.label ? "border-mark-strong bg-mark/40" : "border-rule bg-surface")}
-          >
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="cite !m-0 !text-[11px]">{s.label}</span>
-              <Link href={`/materials/${s.documentId}#u-${s.unitStart}`} className="font-medium text-ink hover:text-action hover:underline">
-                {s.documentTitle}
-              </Link>
-              <span className="text-ink-3">{s.location}</span>
-              {!s.cited && <span className="text-ink-3">(retrieved, not cited)</span>}
-            </div>
-            <button
-              type="button"
-              onClick={() => setExpanded(expanded === s.label ? null : s.label)}
-              className={cx("mt-1 block w-full text-left font-[family-name:var(--font-reading)] text-ink-2", expanded !== s.label && "line-clamp-2")}
-              aria-expanded={expanded === s.label}
-              title={expanded === s.label ? "Show less" : "Show the full excerpt"}
-            >
-              {s.excerpt}
+    <div className="mt-4 space-y-3 border-t border-rule pt-3">
+      {documents.length > 0 && (
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ink-2">
+            <Library className="size-3.5" aria-hidden /> Documents in your collection
+          </p>
+          <ol className="space-y-1.5">
+            {documents.map((s) => (
+              <DocumentItem key={s.label} s={s} highlight={highlight} />
+            ))}
+          </ol>
+        </div>
+      )}
+      {passages.length > 0 && (
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ink-2">
+            <BookMarked className="size-3.5" aria-hidden /> Sources from your materials
+          </p>
+          <ol className="space-y-1.5">
+            {shown.map((s) => (
+              <PassageItem key={s.label} s={s} highlight={highlight} expanded={expanded === s.label} onToggle={() => setExpanded(expanded === s.label ? null : s.label)} />
+            ))}
+          </ol>
+          {cited.length > 0 && others.length > 0 && (
+            <button className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-action hover:underline" onClick={() => setShowOthers((v) => !v)}>
+              <ChevronDown className={cx("size-3.5 transition-transform", showOthers && "rotate-180")} />
+              {showOthers ? "Hide" : "Show"} {others.length} more retrieved {others.length === 1 ? "passage" : "passages"}
             </button>
-          </li>
-        ))}
-      </ol>
-      {cited.length > 0 && others.length > 0 && (
-        <button className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-action hover:underline" onClick={() => setShowOthers((v) => !v)}>
-          <ChevronDown className={cx("size-3.5 transition-transform", showOthers && "rotate-180")} />
-          {showOthers ? "Hide" : "Show"} {others.length} more retrieved {others.length === 1 ? "passage" : "passages"}
-        </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -89,7 +135,17 @@ function SourcesList({ sources, highlight }: { sources: SourceRef[]; highlight: 
 function AssistantMessage({ message, onFollowUp, disabled }: { message: MessageView; onFollowUp: (text: string) => void; disabled: boolean }) {
   const [highlight, setHighlight] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const titles = useMemo(() => Object.fromEntries(message.sources.map((s) => [s.label, `${s.documentTitle}, ${s.location}`])), [message.sources]);
+  const titles = useMemo(
+    () =>
+      Object.fromEntries(
+        message.sources.map((s) => [s.label, s.kind === "document" ? `${s.fileName ?? s.documentTitle}: ${s.status ?? ""}` : `${s.documentTitle}, ${s.location}`]),
+      ),
+    [message.sources],
+  );
+  const searchInfo =
+    message.meta?.searches && message.meta.searches > 1
+      ? `${message.meta.searches} searches, ${message.meta.passages ?? 0} passages`
+      : null;
   return (
     <div className="group">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-ink-3">
@@ -97,6 +153,7 @@ function AssistantMessage({ message, onFollowUp, disabled }: { message: MessageV
         <span className="font-medium text-ink-2">Gen AI</span>
         {message.model && <span>{message.model}</span>}
         <GroundingBadge message={message} />
+        {searchInfo && <span title="How many searches of your materials this answer used, and how many passages the model read.">{searchInfo}</span>}
         {message.meta?.removedCitations?.length ? (
           <span title="The model cited sources that weren't provided; those marks were removed.">
             {message.meta.removedCitations.length} invalid citation{message.meta.removedCitations.length > 1 ? "s" : ""} removed
@@ -369,7 +426,8 @@ function TutorInner() {
                     <button
                       key={s}
                       onClick={() => {
-                        setDraft(`${s}\nTopic: `);
+                        // A complete question is ready to send; the others need a topic.
+                        setDraft(s.endsWith("?") ? s : `${s}\nTopic: `);
                         setTimeout(() => {
                           const el = inputRef.current;
                           if (el) {

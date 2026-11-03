@@ -13,6 +13,8 @@ const Patch = z.object({
   embedModel: z.string().max(200).optional(),
   numCtx: z.number().int().min(2048).max(262144).optional(),
   defaultLanguage: zLanguage.optional(),
+  passages: z.number().int().min(2).max(24).optional(),
+  timeoutMinutes: z.number().int().min(1).max(120).optional(),
 });
 
 export const PUT = handle(async (request: Request) => {

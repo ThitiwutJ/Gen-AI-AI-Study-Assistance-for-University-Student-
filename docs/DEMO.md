@@ -10,7 +10,7 @@ A walkthrough for showing Gen AI to a professor or classmates. It focuses on the
 4. Warm the model up: Settings → **Test the model** (the first request loads the model into memory).
 5. Optional: start from an empty app by stopping Gen AI and deleting the `data` folder.
 
-Use the files in `samples/`. They were written for this project, and contain a few invented "course policy" facts that general knowledge can't answer — that proves answers really come from the documents.
+Use the files in `samples/`. They were written for this project, and contain a few invented "course policy" facts that general knowledge can't answer — that proves answers really come from the documents. Our topic PDFs (README, "Our topic documents") are the real reading list for the topic questions.
 
 ## The walkthrough
 
@@ -25,6 +25,12 @@ Use the files in `samples/`. They were written for this project, and contain a f
 The answer uses the document (15% per day, zero after 3 days) and shows a yellow **S1** mark. Click it: the source panel shows *FIN101 Lecture 3, p. 4*. Click the title to jump to page 4. Explain: the app found the passage, gave it to the model, and checked that the citation is real.
 
 Then ask something the material doesn't cover, e.g. *"What is the Black–Scholes formula?"* — the tutor should say the materials don't cover it and label any general-knowledge answer (small models don't always follow this; the badge above the answer shows whether it cited your materials).
+
+**3b. It knows its own collection (lab 4, 1 min).** Ask:
+
+> What are the papers in my document collection?
+
+The tutor lists every file with its status (*Indexed · N chunks*) and an opening excerpt, with **D1**, **D2**… marks; the **Documents in your collection** panel underneath shows the same facts straight from the database. Then go to **Study Materials** and click a PDF: the original file opens in the page (lab 4, task 2). On the *Extracted text* tab, *View in PDF* jumps to the same page.
 
 **4. Thai (30 s).** Ask in Thai: *การสอบย่อยครั้งที่ 2 จัดในสัปดาห์ไหน* — answered from the Thai document (week 9). Thai search works even though Thai has no spaces between words.
 

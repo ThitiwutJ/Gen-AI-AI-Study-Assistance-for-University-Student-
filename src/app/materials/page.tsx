@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardPaste, FolderPlus, Pencil, Search, Trash2, UploadCloud, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardPaste, ExternalLink, FolderPlus, Pencil, Search, Trash2, UploadCloud, XCircle } from "lucide-react";
 import { DocIcon, IndexBadge, unitWord } from "@/components/shared";
 import { PageContainer } from "@/components/shell/AppShell";
 import { useToast } from "@/components/shell/providers";
@@ -414,11 +414,25 @@ function MaterialsInner() {
                         {d.warning && <AlertTriangle className="size-3.5 shrink-0 text-warn" aria-label="Has a warning" />}
                       </span>
                       <span className="block truncate text-xs text-ink-3">
-                        {d.courseName ?? "No course"}, {unitWord(d.unitKind, d.unitCount)}, {d.wordCount.toLocaleString()} words, added {formatDate(d.createdAt)}
+                        {[d.fileName && d.fileName !== d.title ? d.fileName : null, formatBytes(d.sizeBytes) || null, unitWord(d.unitKind, d.unitCount), d.courseName ?? "No course", `added ${formatDate(d.createdAt)}`]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                     </Link>
                     <IndexBadge doc={d} />
                     <div className="flex">
+                      {d.hasFile && (
+                        <a
+                          href={d.fileType === "pdf" || d.fileType === "txt" || d.fileType === "md" ? `/api/documents/${d.id}/file` : `/api/documents/${d.id}/file?download=1`}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Open the original file of ${d.title}`}
+                          title="Open the original file"
+                          className="inline-flex size-8 items-center justify-center rounded-md text-ink-3 hover:bg-black/[0.05] hover:text-ink"
+                        >
+                          <ExternalLink className="size-4" />
+                        </a>
+                      )}
                       <IconButton
                         label={`Edit ${d.title}`}
                         onClick={() => {

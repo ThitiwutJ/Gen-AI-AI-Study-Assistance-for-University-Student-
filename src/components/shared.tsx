@@ -98,7 +98,11 @@ export function DocIcon({ type, className }: { type: string; className?: string 
 export function IndexBadge({ doc }: { doc: DocumentSummary }) {
   switch (doc.indexStatus) {
     case "ready":
-      return <Badge tone="ok">Indexed</Badge>;
+      return (
+        <Badge tone="ok">
+          Indexed · {doc.chunkCount} chunk{doc.chunkCount === 1 ? "" : "s"}
+        </Badge>
+      );
     case "indexing":
       return (
         <Badge tone="action">
@@ -108,7 +112,11 @@ export function IndexBadge({ doc }: { doc: DocumentSummary }) {
     case "pending":
       return <Badge tone="neutral">Waiting to index</Badge>;
     case "keyword_only":
-      return <Badge tone="neutral">Keyword search</Badge>;
+      return (
+        <Badge tone="neutral">
+          Keyword search · {doc.chunkCount} chunk{doc.chunkCount === 1 ? "" : "s"}
+        </Badge>
+      );
     case "stale":
       return <Badge tone="warn">Re-index needed</Badge>;
     case "failed":

@@ -12,6 +12,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "check:ai": "node scripts/check-ollama.mjs",
+    "import": "node scripts/import-folder.mjs",
     "mock:ollama": "node scripts/mock-ollama.mjs --port 11435",
     "samples": "python scripts/make-samples.py"
   },
@@ -49,7 +50,7 @@
   "optionalDependencies": {
     "better-sqlite3": "^13.0.3"
   },
-  "description": "Gen AI \u2014 an AI study assistant with local knowledge, powered by local Ollama models.",
+  "description": "Gen AI — an AI study assistant with local knowledge, powered by local Ollama models.",
   "engines": {
     "node": ">=22.13.0"
   }

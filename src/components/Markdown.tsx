@@ -8,7 +8,7 @@ import { cx } from "@/components/ui";
 
 /**
  * Safe Markdown rendering for AI output: raw HTML is never rendered (react-markdown default),
- * formulas use KaTeX, and [S1]-style citations become highlighter marks that jump to the source.
+ * formulas use KaTeX, and [S1] / [D1] citations become highlighter marks that jump to the source.
  */
 export function Markdown({
   children,
@@ -23,9 +23,9 @@ export function Markdown({
   citeTitles?: Record<string, string>;
   streaming?: boolean;
 }) {
-  // Turn [S1] into a link we can render as a citation mark. Normalise \( \) and \[ \] math.
+  // Turn [S1] (passage) and [D1] (document) into links we render as citation marks. Normalise \( \) and \[ \] math.
   const prepared = children
-    .replace(/\[(S\d+)\](?!\()/g, "[$1](#cite-$1)")
+    .replace(/\[([SD]\d+)\](?!\()/g, "[$1](#cite-$1)")
     .replace(/\\\((.+?)\\\)/g, (_m, inner: string) => `$${inner}$`)
     .replace(/\\\[([\s\S]+?)\\\]/g, (_m, inner: string) => `$$${inner}$$`);
 
@@ -36,7 +36,7 @@ export function Markdown({
         rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
         components={{
           a: ({ href, children: linkChildren, ...props }) => {
-            const cite = href?.match(/^#cite-(S\d+)$/)?.[1];
+            const cite = href?.match(/^#cite-([SD]\d+)$/)?.[1];
             if (cite) {
               return (
                 <a

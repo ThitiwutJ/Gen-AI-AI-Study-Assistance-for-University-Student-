@@ -2,6 +2,7 @@ import { config } from "@/lib/config";
 import { getDb, hasFullText } from "@/lib/db";
 import { toFloat32 } from "@/lib/db/sqlite";
 import { getProvider, resolveModels } from "@/lib/ai/service";
+import { embedPrefix } from "@/lib/ai/embed-prefix";
 import { formatLocation } from "@/lib/documents/chunk";
 
 /**
@@ -15,6 +16,7 @@ export interface RetrievedChunk {
   id: number;
   documentId: number;
   documentTitle: string;
+  fileName: string | null;
   unitKind: string;
   unitStart: number;
   unitEnd: number;
@@ -169,21 +171,30 @@ export function cosine(a: Float32Array | number[], b: Float32Array | number[]): 
   return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
 }
 
+/** Query vectors computed during one answer, so repeated searches don't embed the same text twice. */
+export type VectorCache = Map<string, number[]>;
+
 async function vectorSearch(
   query: string,
   docIds: number[],
   model: string,
   limit: number,
   signal?: AbortSignal,
+  cache?: VectorCache,
 ): Promise<{ id: number; sim: number }[]> {
   if (!docIds.length) return [];
   const rows = getDb()
     .prepare(`SELECT id, embedding FROM chunks WHERE embed_model = ? AND embedding IS NOT NULL AND document_id IN (${docIds.map(() => "?").join(",")})`)
     .all<{ id: number; embedding: Uint8Array }>(model, ...docIds);
   if (!rows.length) return [];
-  const [queryVector] = await getProvider().embed(model, [query], { signal });
+  const key = `${model}\n${query}`;
+  let queryVector = cache?.get(key);
+  if (!queryVector) {
+    [queryVector] = await getProvider().embed(model, [embedPrefix(model, "query") + query], { signal });
+    cache?.set(key, queryVector);
+  }
   return rows
-    .map((r) => ({ id: r.id, sim: cosine(queryVector, toFloat32(r.embedding) ?? []) }))
+    .map((r) => ({ id: r.id, sim: cosine(queryVector!, toFloat32(r.embedding) ?? []) }))
     .filter((r) => r.sim >= config.minSimilarity)
     .sort((a, b) => b.sim - a.sim)
     .slice(0, limit);
@@ -194,7 +205,7 @@ export function loadChunks(ids: number[]): Map<number, Omit<RetrievedChunk, "sco
   if (!ids.length) return map;
   const rows = getDb()
     .prepare(
-      `SELECT c.id, c.document_id, c.unit_start, c.unit_end, c.heading, c.text, c.token_estimate, d.title, d.unit_kind
+      `SELECT c.id, c.document_id, c.unit_start, c.unit_end, c.heading, c.text, c.token_estimate, d.title, d.file_name, d.unit_kind
        FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id IN (${ids.map(() => "?").join(",")})`,
     )
     .all<{
@@ -206,6 +217,7 @@ export function loadChunks(ids: number[]): Map<number, Omit<RetrievedChunk, "sco
       text: string;
       token_estimate: number;
       title: string;
+      file_name: string | null;
       unit_kind: string;
     }>(...ids);
   for (const r of rows) {
@@ -213,6 +225,7 @@ export function loadChunks(ids: number[]): Map<number, Omit<RetrievedChunk, "sco
       id: r.id,
       documentId: r.document_id,
       documentTitle: r.title,
+      fileName: r.file_name,
       unitKind: r.unit_kind,
       unitStart: r.unit_start,
       unitEnd: r.unit_end,
@@ -225,7 +238,11 @@ export function loadChunks(ids: number[]): Map<number, Omit<RetrievedChunk, "sco
   return map;
 }
 
-export async function retrieve(query: string, scope: Scope, opts: { limit?: number; signal?: AbortSignal } = {}): Promise<RetrievalResult> {
+export async function retrieve(
+  query: string,
+  scope: Scope,
+  opts: { limit?: number; signal?: AbortSignal; vectorCache?: VectorCache } = {},
+): Promise<RetrievalResult> {
   const limit = opts.limit ?? 6;
   const docIds = scopeDocumentIds(scope);
   if (!docIds.length) return { chunks: [], mode: "none", scopeDocumentCount: 0 };
@@ -238,7 +255,7 @@ export async function retrieve(query: string, scope: Scope, opts: { limit?: numb
     const r = await resolveModels();
     if (r.embed) {
       usedVector = true;
-      vectorHits = await vectorSearch(query, docIds, r.embed.name, 30, opts.signal);
+      vectorHits = await vectorSearch(query, docIds, r.embed.name, 30, opts.signal, opts.vectorCache);
     }
   } catch (error) {
     // Embedding failed (e.g. model unloaded or service hiccup): fall back to keywords only.
@@ -264,6 +281,60 @@ export async function retrieve(query: string, scope: Scope, opts: { limit?: numb
     .filter((c): c is RetrievedChunk => c !== null);
 
   return { chunks, mode: usedVector ? "hybrid" : "keyword", scopeDocumentCount: docIds.length };
+}
+
+/**
+ * The searches to run for one question: the question itself, plus each part of a multi-part
+ * question ("What is X? How does it relate to Y?") so every part finds its own passages.
+ */
+export function searchQueries(question: string): string[] {
+  const parts = question
+    .split(/(?<=[?？])\s+|\n+|;\s+/)
+    .map((p) => p.trim())
+    .filter((p) => queryTerms(p).length >= 1);
+  return parts.length > 1 ? [question, ...parts.slice(0, 4)] : [question];
+}
+
+/**
+ * Run several searches and merge them (round-robin, without duplicates) into one list of
+ * at most `limit` passages. With `perDocument`, every document in the scope also gets its own
+ * search so each one is represented ("compare the papers", "summarize each document").
+ */
+export async function multiRetrieve(
+  queries: string[],
+  scope: Scope,
+  opts: { limit: number; perDocument?: boolean; signal?: AbortSignal },
+): Promise<RetrievalResult & { searches: number }> {
+  const docIds = scopeDocumentIds(scope);
+  if (!docIds.length || !queries.length) return { chunks: [], mode: "none", scopeDocumentCount: docIds.length, searches: 0 };
+  const cache: VectorCache = new Map();
+  const lists: RetrievedChunk[][] = [];
+  let mode: RetrievalResult["mode"] = "keyword";
+  let searches = 0;
+  const run = async (query: string, ids: number[], limit: number) => {
+    const r = await retrieve(query, { documentIds: ids }, { limit, signal: opts.signal, vectorCache: cache });
+    searches++;
+    if (r.mode === "hybrid") mode = "hybrid";
+    lists.push(r.chunks);
+  };
+  for (const q of queries) await run(q, docIds, opts.limit);
+  if (opts.perDocument && docIds.length > 1) {
+    const each = Math.max(2, Math.ceil(opts.limit / Math.min(docIds.length, 12)));
+    for (const id of docIds.slice(0, 12)) await run(queries[0], [id], each);
+  }
+
+  const seen = new Set<number>();
+  const merged: RetrievedChunk[] = [];
+  for (let rank = 0; merged.length < opts.limit && lists.some((l) => rank < l.length); rank++) {
+    for (const list of lists) {
+      const c = list[rank];
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      merged.push(c);
+      if (merged.length >= opts.limit) break;
+    }
+  }
+  return { chunks: merged, mode, scopeDocumentCount: docIds.length, searches };
 }
 
 /** Evenly spread chunks across the given documents (for quizzes/summaries without a specific topic). */

@@ -44,6 +44,8 @@ export interface DocumentSummary {
   createdAt: string;
   updatedAt: string;
   lastOpenedAt: string | null;
+  /** The original uploaded file is stored and can be opened (pasted notes have none). */
+  hasFile: boolean;
 }
 
 export interface DocumentUnit {
@@ -57,10 +59,14 @@ export interface DocumentDetail extends DocumentSummary {
   units: DocumentUnit[];
 }
 
-/** A retrieved excerpt shown under an answer. Location data always comes from stored metadata. */
+/**
+ * A source shown under an answer: a retrieved passage ([S1]) or a whole document from the
+ * collection overview ([D1]). Location data always comes from stored metadata.
+ */
 export interface SourceRef {
-  label: string; // "S1"
-  chunkId: number;
+  label: string; // "S1" (passage) or "D1" (document)
+  kind?: "passage" | "document";
+  chunkId: number; // 0 for documents
   documentId: number;
   documentTitle: string;
   location: string; // "p. 3", "slides 2–4", "section: Bonds"
@@ -68,6 +74,9 @@ export interface SourceRef {
   excerpt: string;
   cited: boolean;
   score?: number;
+  /** Documents only: original file name and index status ("Indexed · 111 chunks"). */
+  fileName?: string | null;
+  status?: string;
 }
 
 export interface MessageView {
@@ -83,6 +92,10 @@ export interface MessageView {
     promptTokens?: number;
     numCtx?: number;
     removedCitations?: string[];
+    /** Searches run for this answer and passages given to the model. */
+    searches?: number;
+    passages?: number;
+    collection?: number;
   } | null;
   createdAt: string;
 }
@@ -239,6 +252,10 @@ export interface SettingsView {
   embedModel: string; // "" = automatic, "none" = keyword-only
   numCtx: number;
   defaultLanguage: LanguagePref;
+  /** Passages from the materials given to the model per answer (more = slower, more thorough). */
+  passages: number;
+  /** Time limit for one AI answer, in minutes. */
+  timeoutMinutes: number;
 }
 
 export interface JobView<T = unknown> {

@@ -8,7 +8,14 @@ const DEFAULTS: SettingsView = {
   embedModel: "",
   numCtx: config.numCtx,
   defaultLanguage: "auto",
+  passages: 8,
+  timeoutMinutes: Math.round(config.requestTimeoutMs / 60_000),
 };
+
+function intSetting(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const n = Number.parseInt(raw ?? "", 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
 
 export function getSettings(): SettingsView {
   const rows = getDb().prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();
@@ -21,7 +28,18 @@ export function getSettings(): SettingsView {
     embedModel: map.get("embedModel") ?? DEFAULTS.embedModel,
     numCtx: Number.isFinite(numCtx) ? numCtx : DEFAULTS.numCtx,
     defaultLanguage: lang === "en" || lang === "th" || lang === "auto" ? (lang as LanguagePref) : DEFAULTS.defaultLanguage,
+    passages: intSetting(map.get("passages"), DEFAULTS.passages, 2, 24),
+    timeoutMinutes: intSetting(map.get("timeoutMinutes"), DEFAULTS.timeoutMinutes, 1, 120),
   };
+}
+
+/** Time limit for one AI answer, from Settings (falls back to AI_REQUEST_TIMEOUT_MS). */
+export function answerTimeoutMs(): number {
+  try {
+    return getSettings().timeoutMinutes * 60_000;
+  } catch {
+    return config.requestTimeoutMs;
+  }
 }
 
 export function saveSettings(patch: Partial<SettingsView>): SettingsView {

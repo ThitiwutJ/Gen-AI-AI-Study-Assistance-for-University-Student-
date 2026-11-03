@@ -15,6 +15,16 @@ const VARIANTS: Record<Variant, string> = {
   danger: "bg-surface text-bad border border-rule-strong hover:bg-bad-soft",
 };
 
+/** Button styling for links (an <a> must not contain a <button>). */
+export function buttonClass(variant: Variant = "secondary", size: "sm" | "md" = "md", className?: string): string {
+  return cx(
+    "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+    size === "sm" ? "h-8 px-3 text-[13px]" : "h-9 px-3.5 text-sm",
+    VARIANTS[variant],
+    className,
+  );
+}
+
 export const Button = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: "sm" | "md"; busy?: boolean; icon?: ReactNode }
@@ -22,12 +32,7 @@ export const Button = forwardRef<
   return (
     <button
       ref={ref}
-      className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-        size === "sm" ? "h-8 px-3 text-[13px]" : "h-9 px-3.5 text-sm",
-        VARIANTS[variant],
-        className,
-      )}
+      className={buttonClass(variant, size, className)}
       disabled={disabled || busy}
       {...props}
     >

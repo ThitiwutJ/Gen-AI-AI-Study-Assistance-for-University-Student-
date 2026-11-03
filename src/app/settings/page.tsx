@@ -10,6 +10,8 @@ import { api, ApiError, useApi } from "@/hooks/api";
 import type { SettingsView } from "@/lib/types";
 
 const CTX_OPTIONS = [4096, 8192, 16384, 32768, 65536];
+const PASSAGE_OPTIONS = [4, 8, 12, 16];
+const TIMEOUT_OPTIONS = [5, 10, 20, 30, 60];
 
 function CopyCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
@@ -215,6 +217,34 @@ export default function SettingsPage() {
                       {n.toLocaleString()} tokens{maxCtx !== null && n > maxCtx ? " (more than this model supports)" : ""}
                     </option>
                   ))}
+                </Select>
+              </Field>
+              <Field
+                label="Passages per answer"
+                htmlFor="passages"
+                hint="How many passages from your materials the tutor searches for and reads before answering. More passages help with difficult or broad questions but take longer. Above 8, set the context window to 16,384 so they all fit."
+              >
+                <Select id="passages" value={form.passages} onChange={(e) => void save({ passages: Number(e.target.value) }, "Passages per answer saved.")} disabled={saving}>
+                  {PASSAGE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} passages{n === 8 ? " (recommended)" : n > 8 ? " (thorough, slower)" : " (fastest)"}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field
+                label="Time limit per answer"
+                htmlFor="timeout"
+                hint="How long Gen AI waits for the local model before giving up. Raise it for difficult questions, long summaries or a slow laptop. You can always press Stop."
+              >
+                <Select id="timeout" value={form.timeoutMinutes} onChange={(e) => void save({ timeoutMinutes: Number(e.target.value) }, "Time limit saved.")} disabled={saving}>
+                  {[...new Set([...TIMEOUT_OPTIONS, form.timeoutMinutes])]
+                    .sort((a, b) => a - b)
+                    .map((n) => (
+                      <option key={n} value={n}>
+                        {n} minutes{n === 10 ? " (default)" : ""}
+                      </option>
+                    ))}
                 </Select>
               </Field>
               <div className="space-y-1.5">

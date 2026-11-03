@@ -24,6 +24,9 @@ An AI study assistant for university students that learns from **your own course
 | ✅ | **Study materials** | Upload PDF, Word (.docx), PowerPoint (.pptx), .txt/.md, or paste notes. Drag and drop, courses, rename, delete, view the extracted text page by page. |
 | ✅ | **Local knowledge retrieval** | Passages are indexed for keyword search (SQLite FTS5, works for Thai) and semantic search (local embeddings). Hybrid ranking picks the best passages for each question. |
 | ✅ | **AI Tutor** | Grounded answers with highlighted citations like **S1** that link to the exact page; levels (beginner / standard / exam-ready); English or Thai; follow-up buttons; saved conversations; retry after errors. |
+| ✅ | **Knows its document collection** | Ask *"What are the papers in my document collection?"* and the tutor lists every file with its index status (e.g. *Indexed · 111 chunks*) and what its opening says, cited as **D1**, **D2**…. Ordinary answers name the document each passage comes from. |
+| ✅ | **Open the original file** | Click a material to see the uploaded PDF in the browser (or download Word/PowerPoint files); jump from any page of the extracted text to the same page in the PDF. |
+| ✅ | **Search depth and time limits** | Settings → *Passages per answer* (4–16) and *Time limit per answer* (5–60 min). Multi-part questions and "each paper" questions run several searches so every part and every document is covered. |
 | ✅ | **Summaries & notes** | Quick overview, detailed summary, exam notes, beginner explanation, topic breakdown. Long lectures are summarized in parts and combined. Notes are saved and can be renamed, copied, downloaded or deleted. |
 | ✅ | **Practice quizzes** | Multiple choice, true/false and short answer from your materials. Every generated question is validated; short answers are graded by the local model and labelled as AI suggestions. Scores come from your real answers. |
 | ✅ | **Flashcards** | Flip through any quiz as flashcards and mark cards for review. |
@@ -49,8 +52,35 @@ All AI calls go **browser → Gen AI server → Ollama** on the same computer. T
 2. **Chunking** — text is split into ~450-token passages with overlap, at sentence and word boundaries found with `Intl.Segmenter` (Thai has no spaces between words). Every passage keeps the page/slide/section it came from.
 3. **Indexing** — passages go into a SQLite FTS5 keyword index (trigram tokenizer, so Thai is searchable) and, if an embedding model is installed, are embedded with Ollama's `/api/embed` and stored as vectors in SQLite.
 4. **Retrieval** — each question is searched with keywords and vectors; results are merged with reciprocal-rank fusion. Without an embedding model the app still works with keyword search.
-5. **Grounded generation** — the best passages are labelled `[S1]`, `[S2]`… and sent to the chat model with the question and recent conversation, sized to fit the context window (`num_ctx` is always set explicitly).
-6. **Citations** — the model cites labels; the app keeps only labels it actually supplied and shows each source with its real page number from stored metadata. Page numbers are never taken from the model.
+5. **More searches for harder questions** — a question with several parts is searched part by part, and a question about *each* or *all* documents also searches every document separately; the results are merged without duplicates, up to the *Passages per answer* setting.
+6. **Grounded generation** — the best passages are labelled `[S1]`, `[S2]`… (with their document title, page and file name) and sent to the chat model with the question and recent conversation, sized to fit the context window (`num_ctx` is always set explicitly).
+7. **The document collection** — the model also gets a list of the documents it can use, labelled `[D1]`, `[D2]`…, with each file's name, page count, size and index status. For questions about the collection itself it gets each document's opening excerpt too, so it can say what each paper is about.
+8. **Citations** — the model cites labels; the app keeps only labels it actually supplied and shows each source with its real page number from stored metadata. Page numbers are never taken from the model.
+
+## Lab 4: a personal AI assistant with knowledge about our topic
+
+| Lab task | Where it is in Gen AI |
+|---|---|
+| Run `qwen3:1.7b` and `nomic-embed-text` locally | Both are picked automatically when installed (Settings shows which models are in use). |
+| **Task 1:** the program must name its sources | Ask *"What are the papers in my document collection?"*: the tutor lists each file with *Indexed · N chunks* and an opening excerpt, and a **Documents in your collection** panel shows the same facts from the database. Every other answer cites passages (**S1**) with document, page and file name. Code: `src/lib/retrieval/collection.ts`, `src/lib/features/tutor.ts`. |
+| **Task 2:** click an uploaded file to show it | **Study Materials** → click a file (or the open icon) → the original PDF opens in the page; *View in PDF* on any page of the extracted text. Code: `src/app/api/documents/[id]/file/route.ts`, `src/app/materials/[id]/page.tsx`. |
+| **Task 3:** upload the software to GitHub | This repository. |
+| **Task 4:** 4–5 PDFs important for our topic | See [Our topic documents](#our-topic-documents). |
+| Longer timeouts, more searches | Settings → *Time limit per answer* and *Passages per answer*; multi-part and "each paper" questions run several searches (see step 5 above). |
+
+### Our topic documents
+
+Our topic is AI as a study assistant, so our collection is research on how AI helps (and can harm) learning, how "local knowledge" (RAG) works, and the policy guidance for using generative AI in education. The PDFs are not stored in this repository (copyright); they are free to download from the links below and are uploaded into Gen AI under the course *"Our topic: AI study assistants"*.
+
+| # | Document | Why it matters for our topic |
+|---|---|---|
+| 1 | Lewis, P. et al. (2020). *Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks.* NeurIPS. [arXiv:2005.11401](https://arxiv.org/abs/2005.11401) | The original RAG paper: the method Gen AI uses to give a local model "local knowledge". |
+| 2 | Kasneci, E. et al. (2023). *ChatGPT for good? On opportunities and challenges of large language models for education.* Learning and Individual Differences, 103. [Open-access copy](https://opus.bibliothek.uni-augsburg.de/opus4/files/109030/109030.pdf) | Overview of what large language models can and can't do for students and teachers. |
+| 3 | UNESCO (2023). *Guidance for generative AI in education and research.* [PDF](https://www.teachertaskforce.org/sites/default/files/2023-09/2023_UNESCO_Guidance-for-generative-AI-in-education-and-research_EN.pdf) | Policy guidance, including data privacy, which is why Gen AI keeps everything on the laptop. |
+| 4 | Bastani, H. et al. (2025). *Generative AI without guardrails can harm learning: Evidence from high school mathematics.* PNAS, 122(26). [doi:10.1073/pnas.2422633122](https://doi.org/10.1073/pnas.2422633122) | Field experiment: unrestricted ChatGPT use hurt exam results, while a tutor version with safeguards largely avoided the harm — the case for grounded answers, citations and practice quizzes. |
+| 5 | Kestin, G. et al. (2025). *AI tutoring outperforms in-class active learning: an RCT introducing a novel research-based design in an authentic educational setting.* Scientific Reports, 15. [doi:10.1038/s41598-025-97652-6](https://doi.org/10.1038/s41598-025-97652-6) | Randomized trial at Harvard: a well-designed AI tutor helped students learn more in less time. |
+
+To add them on another computer: put the PDFs in a folder, start Gen AI, and run `npm run import -- "<folder>" --course "Our topic: AI study assistants"`.
 
 ## Requirements
 
@@ -62,9 +92,13 @@ Recommended models (check sizes on ollama.com before downloading):
 
 | Purpose | Model | Notes |
 |---|---|---|
-| Chat (what you have now) | `gemma3:1b` | Fast, but weak at long explanations, Thai, and quiz JSON. |
+| Chat (course lab) | `qwen3:1.7b` | About 1.4 GB. The model used in the course lab; Gen AI picks it automatically and turns its "thinking" off so answers come quickly. |
+| Embeddings (course lab) | `nomic-embed-text` | About 270 MB. Turns on semantic search (English). Gen AI adds the `search_document:` / `search_query:` prefixes this model expects. |
+| Chat (smaller) | `gemma3:1b` | Fast, but weak at long explanations, Thai, and quiz JSON. |
 | Chat (better) | `gemma3:4b` | Good step up if your laptop has 8 GB+ RAM. |
-| Embeddings (optional) | `qwen3-embedding:0.6b` | Multilingual (English + Thai). Turns on semantic search. |
+| Embeddings (Thai) | `qwen3-embedding:0.6b` | Multilingual (English + Thai) alternative to `nomic-embed-text`. |
+
+Install the lab models with `ollama pull qwen3:1.7b` and `ollama pull nomic-embed-text`.
 
 Gen AI never downloads models by itself.
 
@@ -118,6 +152,7 @@ There are no accounts, no cloud storage and no sync between devices. To reset Ge
 | `npm run start:next` | Start without the Ollama check or CPU fallback |
 | `npm run start:lan` | Start so other devices on the same network can open it (no login — trusted networks only) |
 | `npm run check:ai` | Live test of your real Ollama models |
+| `npm run import -- <folder> --course "Name"` | Upload every PDF/DOCX/PPTX/TXT/MD file in a folder to the running app (skips files already uploaded) |
 | `npm test` | Unit + integration tests (uses a test double instead of Ollama) |
 | `npm run typecheck` / `npm run lint` | Type-check / lint |
 | `npm run samples` | Rebuild the sample documents (needs Python + reportlab, python-docx, python-pptx) |

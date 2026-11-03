@@ -72,6 +72,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       headers: this.headers(),
       body: JSON.stringify(body),
       signal: req.signal,
+      timeoutMs: req.timeoutMs,
       providerKind: this.kind,
       baseUrl: this.baseUrl,
     });

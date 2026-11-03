@@ -52,9 +52,9 @@ export const aiErrors = {
   timeout(seconds: number) {
     return new AppError(
       "ai_timeout",
-      `The AI model didn't finish within ${seconds} seconds.`,
+      seconds >= 120 ? `The AI model didn't finish within ${Math.round(seconds / 60)} minutes.` : `The AI model didn't finish within ${seconds} seconds.`,
       504,
-      "Local models can be slow on laptops. Try again, ask a shorter question, select fewer documents, or lower the context window in Settings.",
+      "Local models can be slow on laptops. For difficult questions, raise \"Time limit per answer\" in Settings and try again. A shorter question, fewer selected materials or fewer passages per answer are faster.",
     );
   },
   cancelled() {

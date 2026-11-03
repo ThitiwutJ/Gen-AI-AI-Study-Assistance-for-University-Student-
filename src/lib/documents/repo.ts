@@ -56,6 +56,7 @@ export function toDocumentSummary(r: DocRow): DocumentSummary {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     lastOpenedAt: r.last_opened_at,
+    hasFile: Boolean(r.stored_name),
   };
 }
 
@@ -97,6 +98,40 @@ export function getDocumentsByIds(ids: number[]): DocumentSummary[] {
     .prepare(`${SELECT} WHERE d.id IN (${ids.map(() => "?").join(",")})`)
     .all<DocRow>(...ids)
     .map(toDocumentSummary);
+}
+
+const MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  txt: "text/plain; charset=utf-8",
+  md: "text/markdown; charset=utf-8",
+};
+
+/** Where the original uploaded file is stored, or null for pasted notes / a missing file. */
+export function getStoredFile(id: number): { path: string; fileName: string; fileType: FileType; mime: string; size: number } | null {
+  const row = getDb()
+    .prepare("SELECT stored_name, file_name, file_type FROM documents WHERE id = ?")
+    .get<{ stored_name: string | null; file_name: string | null; file_type: string }>(id);
+  if (!row?.stored_name) return null;
+  // basename(): the stored name is ours, but never let it point outside the uploads folder.
+  const file = path.join(/*turbopackIgnore: true*/ uploadsDir(), path.basename(row.stored_name));
+  let size: number;
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile()) return null;
+    size = stat.size;
+  } catch {
+    return null;
+  }
+  const fileType = row.file_type as FileType;
+  return {
+    path: file,
+    fileName: row.file_name ?? path.basename(row.stored_name),
+    fileType,
+    mime: MIME[fileType] ?? "application/octet-stream",
+    size,
+  };
 }
 
 export function touchDocument(id: number): void {
@@ -149,7 +184,7 @@ export function deleteDocument(id: number): boolean {
     db.prepare("DELETE FROM documents WHERE id = ?").run(id);
   });
   if (doc.stored_name) {
-    const file = path.join(uploadsDir(), path.basename(doc.stored_name));
+    const file = path.join(/*turbopackIgnore: true*/ uploadsDir(), path.basename(doc.stored_name));
     fs.rmSync(file, { force: true });
   }
   return true;
